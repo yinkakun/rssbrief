@@ -1,0 +1,23 @@
+{
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+  "eslint.validate": ["javascript", "javascriptreact", "typescript", "typescriptreact"],
+  "eslint.workingDirectories": [
+    {
+      "mode": "auto"
+    }
+  ],
+  "typescript.preferences.importModuleSpecifier": "non-relative",
+  "typescript.preferences.preferTypeOnlyAutoImports": true,
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "files.readonlyInclude": {
+    "**/routetree.gen.ts": true
+  },
+  "files.watcherExclude": {
+    "**/routetree.gen.ts": true
+  },
+  "search.exclude": {
+    "**/routetree.gen.ts": true
+  }
+}
