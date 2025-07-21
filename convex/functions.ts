@@ -1,5 +1,5 @@
-import { api } from './_generated/api';
-import { query, mutation, action } from './_generated/server';
+import { api } from '@/ctx/api';
+import { query, mutation, action } from '@/ctx/server';
 
 import { v } from 'convex/values';
 

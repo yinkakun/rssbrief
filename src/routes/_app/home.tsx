@@ -4,9 +4,7 @@ import { useAction } from 'convex/react';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { convexQuery } from '@convex-dev/react-query';
 
-export const Route = createFileRoute('/actions')({
-  component: AnotherPage,
-});
+export const Route = createFileRoute('/_app/home')({ component: AnotherPage });
 
 function AnotherPage() {
   const callMyAction = useAction(api.functions.myAction);

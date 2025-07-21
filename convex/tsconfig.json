@@ -1,8 +1,4 @@
 {
-  /* This TypeScript project config describes the environment that
-   * Convex functions run in and is used to typecheck them.
-   * You can modify it, but some settings required to use Convex.
-   */
   "compilerOptions": {
     /* These settings are not required by Convex and can be modified. */
     "allowJs": true,
@@ -11,6 +7,9 @@
     "jsx": "react-jsx",
     "skipLibCheck": true,
     "allowSyntheticDefaultImports": true,
+     "paths": {
+      "@/ctx/*": ["./_generated/*"],
+    },
 
     /* These compiler options are required by Convex */
     "target": "ESNext",
