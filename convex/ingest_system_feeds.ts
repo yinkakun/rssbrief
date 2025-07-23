@@ -6,22 +6,9 @@ import pLimit from 'p-limit';
 
 import { action } from './_generated/server';
 
-interface Category {
-  rss: string;
-  name: string;
-}
-
-interface FeedItem {
-  link: string;
-  title: string;
-}
-
-interface CategoryWithFeeds {
-  errors: Array<{
-    message: string;
-  }>;
-  feeds: FeedItem[];
-  category: Category;
+interface CrawlError {
+  type?: string;
+  message: string;
 }
 
 // Utils
@@ -39,13 +26,10 @@ const fetchPage = (url: string) =>
     (e) => new Error(`Failed to fetch page at ${url}: ` + (e as Error).message),
   );
 
-// Consider making this a utility function if used elsewhere, otherwise inline
 const limitArray = (<T>(arr: T[], max: number): T[] => {
   if (arr.length <= max) return arr;
   return arr.slice(0, max);
 }) as <T>(arr: T[], max: number) => T[];
-
-// 0. Safe creators
 
 const createSafeXMLParser = fromThrowable(
   (xml: string) => {
@@ -58,7 +42,7 @@ const createSafeXMLParser = fromThrowable(
   (e) => new Error('Failed to parse XML: ' + (e as Error).message),
 );
 
-const createSafeCheerioParser = fromThrowable(
+const createSafeHtmlParser = fromThrowable(
   (html: string) => cheerio.load(html),
   (e) => new Error('Failed to parse HTML: ' + (e as Error).message),
 );
@@ -68,8 +52,9 @@ const createSafeURL = fromThrowable(
   (e) => new Error('Failed to create URL: ' + (e as Error).message),
 );
 
-async function fetchCategoryPageUrls() {
-  const xmlResult = await fetchPage('https://ooh.directory/sitemap-categories.xml');
+async function fetchCategorySitemap() {
+  const siteMap = 'https://ooh.directory/sitemap-categories.xml';
+  const xmlResult = await fetchPage(siteMap);
 
   if (xmlResult.isErr()) {
     return err(xmlResult.error);
@@ -89,8 +74,12 @@ async function fetchCategoryPageUrls() {
   });
 }
 
-function extractCategoryPage(html: string) {
-  const htmlParser = createSafeCheerioParser(html);
+interface CategorySitemap extends CategoryTreeItem {
+  rss: string;
+}
+
+function extractCategoryPageRss(html: string, categoryItem: CategoryTreeItem) {
+  const htmlParser = createSafeHtmlParser(html);
 
   return htmlParser.andThen(($) => {
     const fullTitle = $('title').first().text(); // e.g. "Blogs about Arts and media (ooh.directory)"
@@ -112,189 +101,311 @@ function extractCategoryPage(html: string) {
       return err(new Error(`Failed to create RSS URL: ${rssResult.error.message}`));
     }
 
-    return ok<Category>({
+    return ok<CategorySitemap>({
+      ...categoryItem,
       rss: rssResult.value,
-      name,
     });
   });
 }
 
-// 1 Fetch categories
-async function fetchCategories() {
-  const categoryUrlsResult = await fetchCategoryPageUrls();
-
-  if (categoryUrlsResult.isErr()) {
-    return { errors: [categoryUrlsResult.error], categories: [] };
-  }
-
-  const errors: Array<{
-    message: string;
-  }> = [];
-  const categories: Category[] = [];
-
-  const limit = pLimit(5); // Concurrency limit
-
-  const categoryPromises = limitArray(categoryUrlsResult.value, 10).map((url) =>
-    limit(async () => {
-      const htmlResult = await fetchPage(url);
-      if (htmlResult.isErr()) {
-        errors.push({ message: `Failed to fetch category page at ${url}: ${htmlResult.error.message}` });
-        return;
-      }
-
-      const categoryDataResult = extractCategoryPage(htmlResult.value);
-      if (categoryDataResult.isErr()) {
-        errors.push({ message: `Failed to extract category data from ${url}: ${categoryDataResult.error.message}` });
-        return;
-      }
-      categories.push(categoryDataResult.value);
-    }),
-  );
-
-  await Promise.all(categoryPromises);
-
-  return { errors, categories };
+interface TreeNode {
+  name: string;
+  urls: string[];
+  children: { [key: string]: TreeNode };
 }
 
-// 2 Fetch category feeds
+interface CategoryTree {
+  [category: string]: TreeNode;
+}
 
-async function fetchCategoryFeeds(category: Category) {
-  const errors: Array<{
-    message: string;
-  }> = [];
-  const feeds: FeedItem[] = [];
+interface CategoryTreeItem {
+  url: string;
+  name: string;
+  path: string[];
+}
 
-  const categoryRssResult = await fetchPage(category.rss);
-  if (categoryRssResult.isErr()) {
-    errors.push({ message: `Failed to fetch category RSS at ${category.rss}: ${categoryRssResult.error.message}` });
-    return { errors, feeds, category };
-  }
+function buildUrlTree(urls: string[]): CategoryTree {
+  const tree: CategoryTree = {};
 
-  const blogUrlsResult = await extractBlogUrlsFromCategoryRss(categoryRssResult.value);
-  if (blogUrlsResult.isErr()) {
-    errors.push({ message: `Failed to extract blog URLs from category RSS: ${blogUrlsResult.error.message}` });
-    return { errors, feeds, category };
-  }
+  for (const url of urls) {
+    const path = url.replace('https://ooh.directory/blogs/', '');
 
-  const limitedBlogUrls = limitArray(blogUrlsResult.value, 10);
-  const limit = pLimit(3); // 3 concurrent requests
+    if (!path || path === '/') continue;
 
-  const blogFeedPromises = limitedBlogUrls.map((blogUrl) =>
-    limit(async () => {
-      const blogPageResult = await fetchPage(blogUrl);
-      if (blogPageResult.isErr()) {
-        errors.push({ message: `Failed to fetch blog page at ${blogUrl}: ${blogPageResult.error.message}` });
-        return;
+    const segments = path.split('/').filter((segment) => segment.length > 0);
+
+    let currentLevel = tree;
+
+    // Navigate/create the tree structure
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i];
+
+      if (!currentLevel[segment]) {
+        currentLevel[segment] = {
+          name: segment,
+          urls: [],
+          children: {},
+        };
       }
 
-      const rssFeedLinkResult = extractRssFeedLinkFromBlogPage(blogPageResult.value, blogUrl);
-      if (rssFeedLinkResult.isErr()) {
+      if (i === segments.length - 1) {
+        if (!currentLevel[segment].urls.includes(url)) {
+          currentLevel[segment].urls.push(url);
+        }
+      }
+
+      currentLevel = currentLevel[segment].children;
+    }
+  }
+
+  function removeUrlsFromParentNodes(node: TreeNode): boolean {
+    const hasChildren = Object.keys(node.children).length > 0;
+
+    for (const child of Object.values(node.children)) {
+      removeUrlsFromParentNodes(child);
+    }
+
+    if (hasChildren) {
+      node.urls = [];
+    }
+
+    return hasChildren;
+  }
+
+  for (const rootNode of Object.values(tree)) {
+    removeUrlsFromParentNodes(rootNode);
+  }
+
+  return tree;
+}
+
+function getCategoriesWithUrls(tree: CategoryTree): CategoryTreeItem[] {
+  const result: CategoryTreeItem[] = [];
+
+  function traverse(node: TreeNode, currentPath: string[] = []) {
+    const nodePath = [...currentPath, node.name];
+
+    for (const url of node.urls) {
+      result.push({
+        url: url,
+        path: nodePath,
+        name: node.name,
+      });
+    }
+
+    for (const child of Object.values(node.children)) {
+      traverse(child, nodePath);
+    }
+  }
+
+  // start traversal from the root nodes
+  for (const rootNode of Object.values(tree)) {
+    traverse(rootNode);
+  }
+
+  return result;
+}
+
+// 1 Fetch category sitemaps
+// {
+//   name: 'houses',
+//   path: [ 'arts', 'architecture', 'houses' ],
+//   url: 'https://ooh.directory/blogs/arts/architecture/houses/',
+//   rss: 'https://ooh.directory/feeds/cats/96jzx8/rss/houses.xml'
+// }[]
+async function fetchAllCategorySitemaps() {
+  const categorySitemapResult = await fetchCategorySitemap();
+
+  if (categorySitemapResult.isErr()) {
+    return err(new Error(`Failed to fetch category URLs: ${categorySitemapResult.error.message}`));
+  }
+
+  const categorySitemap = buildUrlTree(categorySitemapResult.value);
+  const finalCategoryLinks = getCategoriesWithUrls(categorySitemap);
+
+  const errors: CrawlError[] = [];
+  const sitemaps: {
+    rss: string;
+    name: string;
+    path: string[];
+  }[] = [];
+
+  const limitedFinalCategoryLinks = limitArray(finalCategoryLinks, 10);
+
+  const concurrencyLimit = 10;
+  const categoryPromises = limitedFinalCategoryLinks.map((categoryItem) => {
+    return pLimit(concurrencyLimit)(async () => {
+      const categoryPageHtml = await fetchPage(categoryItem.url);
+      if (categoryPageHtml.isErr()) {
         errors.push({
-          message: `Failed to extract RSS feed link from blog page at ${blogUrl}: ${rssFeedLinkResult.error.message}`,
+          message: `Failed to fetch category page at ${categoryItem.url}: ${categoryPageHtml.error.message}`,
         });
         return;
       }
 
-      // TEMPORARY FIX: If the link is relative,exclude it or starts with https://ooh.directory or ./rss.xml
-      if (
-        rssFeedLinkResult.value.startsWith('/') ||
-        rssFeedLinkResult.value.startsWith('https://ooh.directory') ||
-        rssFeedLinkResult.value.startsWith('./rss.xml')
-      ) {
-        console.warn(`Skipping relative RSS link: ${rssFeedLinkResult.value}`);
+      const categoryItemWithRssResult = extractCategoryPageRss(categoryPageHtml.value, categoryItem);
+      if (categoryItemWithRssResult.isErr()) {
+        errors.push({
+          message: `Failed to extract category data from ${categoryItem.url}: ${categoryItemWithRssResult.error.message}`,
+        });
         return;
       }
 
-      const blogRssFeedResult = await fetchPage(rssFeedLinkResult.value);
-      if (blogRssFeedResult.isErr()) {
-        console.warn(`Failed to fetch RSS feed for blog ${blogUrl}:`, blogRssFeedResult.error);
-        errors.push({ message: `Failed to fetch RSS feed for blog ${blogUrl}: ${blogRssFeedResult.error.message}` });
-        return;
-      }
+      sitemaps.push(categoryItemWithRssResult.value);
+    });
+  });
 
-      const parsedRssResult = createSafeXMLParser(blogRssFeedResult.value);
-      if (parsedRssResult.isErr()) {
-        console.warn(`Failed to parse RSS feed for blog ${blogUrl}:`, parsedRssResult.error);
-        errors.push({ message: `Failed to parse RSS feed for blog ${blogUrl}: ${parsedRssResult.error.message}` });
-        return;
-      }
+  await Promise.all(categoryPromises);
 
-      const rss = parsedRssResult.value.rss || parsedRssResult.value;
-      const channel = rss.channel || rss;
-      if (!channel || !channel.item) {
-        console.warn(`Invalid RSS format for blog ${blogUrl}: no items found`);
-        errors.push({ message: `Invalid RSS format for blog ${blogUrl}: no items found` });
-        return;
-      }
-
-      const items = Array.isArray(channel.item) ? channel.item : [channel.item];
-      const feedItems: FeedItem[] = items
-        .filter((item: unknown) => {
-          const typedItem = item as { link: string; title: string };
-          return typedItem.link && typedItem.title;
-        })
-        .map((item: { link: string; title: string }) => ({
-          link: item.link,
-          title: item.title,
-        }));
-
-      feeds.push(...feedItems);
-    }),
-  );
-
-  await Promise.all(blogFeedPromises);
-
-  return { errors, feeds, category };
+  return ok({
+    errors,
+    sitemap: sitemaps,
+  });
 }
 
-async function fetchAllCategoryFeeds() {
-  const categoriesResult = await fetchCategories();
+async function extractCategoryRssLinks(category: { rss: string; name: string; path: string[] }) {
+  const categoryPageResult = await fetchPage(category.rss);
 
-  const categories = categoriesResult.categories;
+  if (categoryPageResult.isErr()) {
+    return err(new Error(`Failed to fetch category page at ${category.rss}: ${categoryPageResult.error.message}`));
+  }
 
-  const categoryWithFeeds: CategoryWithFeeds[] = [];
-  const errors: Array<{
-    message: string;
-  }> = [...categoriesResult.errors];
+  const blogUrlsResult = await extractBlogUrlsFromCategoryRss(categoryPageResult.value);
+  if (blogUrlsResult.isErr()) {
+    return err(new Error(`Failed to extract blog URLs from category RSS: ${blogUrlsResult.error.message}`));
+  }
 
-  const limit = pLimit(2); // Concurrency limit for fetching all category feeds, e.g., 2 categories at a time
+  const limitedBlogUrls = limitArray(blogUrlsResult.value, 10);
 
-  const allCategoryFeedPromises = categories.map((category) =>
-    limit(async () => {
-      const result = await fetchCategoryFeeds(category);
-      categoryWithFeeds.push({
-        errors: result.errors,
-        feeds: result.feeds,
-        category,
-      });
-    }),
-  );
+  const crawlErrors: CrawlError[] = [];
+
+  const concurrencyLimit = 10;
+  const rssLinksPromise = limitedBlogUrls.map((blogUrl) => {
+    return pLimit(concurrencyLimit)(async () => {
+      const blogPageResult = await fetchPage(blogUrl);
+      if (blogPageResult.isErr()) {
+        crawlErrors.push({ message: `Failed to fetch blog page at ${blogUrl}: ${blogPageResult.error.message}` });
+        return undefined;
+      }
+
+      const rssFeedLinkResult = extractRssFeedLinkFromBlogPage(blogPageResult.value, blogUrl);
+      if (rssFeedLinkResult.isErr()) {
+        console.warn(`Failed to extract RSS feed link from blog page at ${blogUrl}:`, rssFeedLinkResult.error);
+        crawlErrors.push({
+          message: `Failed to extract RSS feed link from blog page at ${blogUrl}: ${rssFeedLinkResult.error.message}`,
+        });
+        return undefined;
+      }
+
+      // const blogRssFeedResult = await fetchPage(rssFeedLinkResult.value);
+      // if (blogRssFeedResult.isErr()) {
+      //   console.warn(`Failed to fetch RSS feed for blog ${blogUrl}:`, blogRssFeedResult.error);
+      //   crawlErrors.push({
+      //     message: `Failed to fetch RSS feed for blog ${blogUrl}: ${blogRssFeedResult.error.message}`,
+      //   });
+      //   return undefined;
+      // }
+
+      return rssFeedLinkResult.value;
+    });
+  });
+
+  const rssLinksResults = await Promise.all(rssLinksPromise);
+
+  return ok({
+    errors: crawlErrors,
+    rssLinks: rssLinksResults.filter((link) => link !== undefined),
+  });
+}
+
+async function fetchAllCategoryRssLinks() {
+  const categorySitemapsResult = await fetchAllCategorySitemaps();
+
+  if (categorySitemapsResult.isErr()) {
+    return err(new Error(`Failed to fetch categories: ${categorySitemapsResult.error.message}`));
+  }
+
+  const groupedCategories: Record<
+    string,
+    {
+      path: string[];
+      rssLinks: string[];
+    }
+  > = {};
+
+  const concurrencyLimit = 10;
+  const allCategoryFeedPromises = categorySitemapsResult.value.sitemap.map((categorySitemap) => {
+    return pLimit(concurrencyLimit)(async () => {
+      const rssLinksResult = await extractCategoryRssLinks(categorySitemap);
+
+      if (rssLinksResult.isErr()) {
+        console.warn(`Failed to extract RSS links for category ${categorySitemap.name}:`, rssLinksResult.error);
+        return;
+      }
+
+      console.log('LINKS', rssLinksResult.value);
+
+      if (!groupedCategories[categorySitemap.name]) {
+        groupedCategories[categorySitemap.name] = {
+          path: categorySitemap.path,
+          rssLinks: rssLinksResult.value.rssLinks,
+        };
+      } else {
+        console.warn(`Duplicate category found: ${categorySitemap.name}. Merging RSS links.`);
+      }
+    });
+  });
 
   await Promise.all(allCategoryFeedPromises);
 
-  return {
-    errors,
-    categoryWithFeeds,
-  };
+  return ok(groupedCategories);
 }
 
 function extractRssFeedLinkFromBlogPage(html: string, baseUrl: string) {
-  const htmlParser = createSafeCheerioParser(html);
+  const selectors = [
+    'link[rel="alternate"][type="application/rss+xml"]',
+    'link[rel="alternate"][type="application/atom+xml"]',
+    'link[rel="alternate"][type*="rss"]',
+    'link[rel="alternate"][type*="atom"]',
+  ];
 
-  return htmlParser.andThen(($) => {
-    const rssLink = $('link[rel="alternate"][type="application/rss+xml"]').attr('href');
-    if (!rssLink) {
-      return err(new Error('No RSS link found in blog page'));
+  return createSafeHtmlParser(html).andThen(($) => {
+    for (const selector of selectors) {
+      const link = $(selector).first();
+      if (link.length > 0) {
+        const feedUrl = link.attr('href');
+        if (feedUrl) {
+          // Attempt to resolve the URL immediately and return if successful
+          const absoluteUrlResult = createAbsoluteUrl(feedUrl, baseUrl);
+          if (absoluteUrlResult.isOk()) {
+            return ok(absoluteUrlResult.value);
+          }
+          // If resolution failed for this specific feedUrl, log it and try the next selector
+          console.warn(
+            `Could not resolve feed URL "${feedUrl}" with base "${baseUrl}": ${absoluteUrlResult.error.message}`,
+          );
+        }
+      }
     }
 
-    // Use createSafeURL to handle relative URLs
-    const absoluteUrlResult = createSafeURL(rssLink, baseUrl);
-    if (absoluteUrlResult.isErr()) {
-      return err(new Error(`Failed to create absolute RSS URL: ${absoluteUrlResult.error.message}`));
-    }
-
-    return ok<string>(absoluteUrlResult.value);
+    return err(new Error('No valid RSS/Atom link found in blog page.'));
   });
+}
+
+function createAbsoluteUrl(url: string, baseUrl: string) {
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return ok(url);
+  }
+
+  const resolvedUrlResult = createSafeURL(url, baseUrl);
+
+  if (resolvedUrlResult.isOk()) {
+    return ok(resolvedUrlResult.value.toString());
+  }
+
+  return err(
+    new Error(`Failed to create absolute URL from "${url}" with base "${baseUrl}": ${resolvedUrlResult.error.message}`),
+  );
 }
 
 async function extractBlogUrlsFromCategoryRss(xml: string) {
@@ -313,26 +424,21 @@ async function extractBlogUrlsFromCategoryRss(xml: string) {
   });
 }
 
-// IIFE
-(async () => {
-  const result = await fetchAllCategoryFeeds();
-  if (result.errors.length > 0) {
-    console.error('Errors fetching feeds:', result.errors);
-  } else {
-    console.log('Fetched category feeds successfully:', result.categoryWithFeeds);
-  }
-})();
-
 export const fetchAllFeedsAction = action({
   args: {},
   handler: async (ctx) => {
-    const result = await fetchAllCategoryFeeds();
-    if (result.errors.length > 0) {
-      console.error('Errors fetching feeds:', result.errors);
+    const result = await fetchAllCategoryRssLinks();
+
+    if (result.isErr()) {
+      return {
+        success: false,
+        error: result.error.message,
+      };
     }
+
     return {
-      errors: result.errors,
-      categoryFeeds: result.categoryWithFeeds,
+      success: true,
+      data: result.value,
     };
   },
 });
