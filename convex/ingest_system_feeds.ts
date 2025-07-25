@@ -1,16 +1,17 @@
+'use node';
 import { action } from './_generated/server';
 import ky from 'ky';
 import * as cheerio from 'cheerio';
-import { XMLParser } from 'fast-xml-parser';
-import { ok, err, fromPromise, fromThrowable } from 'neverthrow';
+// import RssParser from 'rss-parser';
+import { ok, err, Result, fromPromise, fromThrowable } from 'neverthrow';
 import pLimit from 'p-limit';
+import { safeParseRSS } from './rss_parser';
 
-// Types
 interface CategoryItem {
   url: string;
   name: string;
-  pathSegments: string[];
   rssFeedUrl: string;
+  pathSegments: string[];
 }
 
 interface BlogRssLink {
@@ -19,44 +20,59 @@ interface BlogRssLink {
   pathSegments: string[];
 }
 
-// Configuration
+interface CrawlError {
+  step: string;
+  url?: string;
+  message: string;
+}
+
+interface CrawlResult {
+  [categoryName: string]: {
+    pathSegments: string[];
+    blogRssLinks: string[];
+  };
+}
+
 const CONFIG = {
-  BATCH_SIZE: 50,
-  REQUEST_TIMEOUT: 1000,
+  BATCH_SIZE: 20,
+  RETRY_ATTEMPTS: 2,
+  REQUEST_TIMEOUT: 8000,
   MAX_BLOGS_PER_CATEGORY: 5,
-  MAX_RSS_ITEMS_TO_PARSE: 10,
+  MAX_RSS_ITEMS_TO_PARSE: 5,
+  DELAY_BETWEEN_BATCHES: 100,
 } as const;
 
-// Rate limiters
-const RSS_LIMIT = pLimit(10);
-const BLOG_LIMIT = pLimit(10);
-const CATEGORY_LIMIT = pLimit(50);
+const RSS_LIMIT = pLimit(100);
+const BLOG_LIMIT = pLimit(100);
+const CATEGORY_LIMIT = pLimit(100);
 
-// Caches
 const urlCache = new Map<string, string>();
 const contentCache = new Map<string, string>();
 
-// Utilities
 const limitArray = <T>(arr: T[], maxSize: number): T[] => arr.slice(0, maxSize);
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Safe parsers
-const safeParseXML = fromThrowable(
-  (xmlContent: string) =>
-    new XMLParser({
-      ignoreAttributes: false,
-      trimValues: true,
-    }).parse(xmlContent),
-  (e) => new Error(`XML parse error: ${(e as Error).message}`),
-);
+// const rssParser = new RssParser({
+//   timeout: CONFIG.REQUEST_TIMEOUT,
+//   headers: {
+//     'User-Agent': 'RSSBriefBot/1.0',
+//   },
+// });
+
+// const safeParseRSS = (feedUrl: string) =>
+//   fromPromise(rssParser.parseURL(feedUrl), (e) => ({
+//     message: `RSS parse error: ${(e as Error).message}`,
+//     step: 'rss-parse',
+//     url: feedUrl,
+//   }));
 
 const safeParseHTML = fromThrowable(
   (htmlContent: string) => cheerio.load(htmlContent),
-  (e) => new Error(`HTML parse error: ${(e as Error).message}`),
+  (e) => ({ message: `HTML parse error: ${(e as Error).message}`, step: 'html-parse' }),
 );
 
 const safeCreateURL = fromThrowable(
-  (urlPath: string, baseUrl: string) => {
+  (urlPath: string, baseUrl: string): string => {
     const cacheKey = `${urlPath}|${baseUrl}`;
     if (urlCache.has(cacheKey)) return urlCache.get(cacheKey)!;
 
@@ -64,81 +80,86 @@ const safeCreateURL = fromThrowable(
     urlCache.set(cacheKey, result);
     return result;
   },
-  (e) => new Error(`URL creation error: ${(e as Error).message}`),
+  (e) => ({ message: `URL creation error: ${(e as Error).message}`, step: 'url-creation' }),
 );
 
-// HTTP client
-const fetchContent = async (url: string, useCache = true) => {
-  if (useCache && contentCache.has(url)) {
-    return ok(contentCache.get(url)!);
+const httpClient = ky.create({
+  retry: CONFIG.RETRY_ATTEMPTS,
+  timeout: CONFIG.REQUEST_TIMEOUT,
+  headers: {
+    'User-Agent': 'RSSBriefBot/1.0',
+  },
+});
+
+const fetchContent = (url: string, shouldCache = true) => {
+  if (shouldCache && contentCache.has(url)) {
+    return Promise.resolve(ok(contentCache.get(url)!));
   }
 
   return fromPromise(
-    ky
-      .get(url, {
-        timeout: CONFIG.REQUEST_TIMEOUT,
-        headers: {
-          'User-Agent': 'RSSBriefBot/1.0',
-          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        },
-        retry: 1,
-      })
+    httpClient(url)
       .text()
-      .then((content) => {
-        if (useCache) contentCache.set(url, content);
-        return content;
-      }),
-    (e) => new Error(`Fetch failed for ${url}: ${(e as Error).message}`),
+      .then((content) => (shouldCache ? (contentCache.set(url, content), content) : content)),
+    (e) => ({ message: `Fetch failed: ${(e as Error).message}`, step: 'fetch', url }),
   );
 };
 
 // Parse RSS feed and extract blog URLs
-const parseRssFeed = (xmlContent: string) => {
-  return safeParseXML(xmlContent).andThen((parsedXml) => {
-    const channel = parsedXml.rss?.channel || parsedXml.channel || parsedXml;
-    if (!channel?.item) return err(new Error('No RSS items found'));
+const parseRssFeedFromUrl = async (feedUrl: string): Promise<Result<string[], CrawlError>> => {
+  return safeParseRSS(feedUrl).then((result) => {
+    if (result.isErr()) return err(result.error);
 
-    const items = Array.isArray(channel.item) ? channel.item : [channel.item];
-    const blogUrls = limitArray(items, CONFIG.MAX_RSS_ITEMS_TO_PARSE)
-      .map((item) => (item as { link: string }).link)
-      .filter(Boolean);
+    const feed = result.value;
+    const blogUrls = limitArray(feed.items, CONFIG.MAX_RSS_ITEMS_TO_PARSE)
+      .map((item) => item.link)
+      .filter(Boolean)
+      .filter((url): url is string => typeof url === 'string' && url.startsWith('http'));
 
     return ok(blogUrls);
   });
 };
 
 // Get category URLs from sitemap
-const getCategoryUrls = async () => {
-  const result = await fetchContent('https://ooh.directory/sitemap-categories.xml');
-  if (result.isErr()) return result;
+const getCategoryUrls = async (): Promise<Result<string[], CrawlError>> => {
+  return fetchContent('https://ooh.directory/sitemap-categories.xml').then((result) => {
+    if (result.isErr()) return err(result.error);
 
-  return safeParseXML(result.value).andThen((parsedXml) => {
-    const urlEntries = parsedXml.urlset?.url;
-    if (!urlEntries) return err(new Error('Invalid sitemap format'));
+    return safeParseHTML(result.value).andThen(($) => {
+      const urls = $('url loc')
+        .map((_, el) => $(el).text())
+        .get()
+        .filter((url: string) => url?.includes('/blogs/') && !url.endsWith('/blogs/'))
+        .filter(Boolean);
 
-    const urls = (Array.isArray(urlEntries) ? urlEntries : [urlEntries])
-      .map((entry) => entry.loc)
-      .filter((url) => url.includes('/blogs/') && !url.endsWith('/blogs/'));
+      if (urls.length === 0) {
+        return err({ message: 'No category URLs found in sitemap', step: 'sitemap-parse' });
+      }
 
-    return ok(urls);
+      return ok(urls);
+    });
   });
 };
 
 // Extract category data and RSS feed URL from category page
-const processCategoryPage = async (categoryUrl: string) => {
+const processCategoryPage = async (categoryUrl: string): Promise<Result<CategoryItem, CrawlError>> => {
   const htmlResult = await fetchContent(categoryUrl);
-  if (htmlResult.isErr()) return htmlResult;
+  if (htmlResult.isErr()) return err(htmlResult.error);
 
   return safeParseHTML(htmlResult.value).andThen(($) => {
-    const title = $('title').text();
+    const title = $('title').text().trim();
     const categoryName = title
       .replace(/^Blogs about /, '')
       .replace(/\s*\(.*?\)\s*$/, '')
       .trim();
+
     const rssFeedHref = $('link[rel="alternate"][type="application/rss+xml"]').attr('href');
 
     if (!categoryName || !rssFeedHref) {
-      return err(new Error('Missing category name or RSS feed'));
+      return err({
+        message: 'Missing category name or RSS feed',
+        step: 'category-parse',
+        url: categoryUrl,
+      });
     }
 
     const rssFeedUrlResult = safeCreateURL(rssFeedHref, 'https://ooh.directory');
@@ -155,10 +176,10 @@ const processCategoryPage = async (categoryUrl: string) => {
   });
 };
 
-// Process categories in batches
-const processCategories = async (categoryUrls: string[]) => {
+// Process categories in batches with proper error handling
+const processCategories = async (categoryUrls: string[]): Promise<Result<CategoryItem[], CrawlError>> => {
   const categories: CategoryItem[] = [];
-  const errors: string[] = [];
+  let errorCount = 0;
 
   for (let i = 0; i < categoryUrls.length; i += CONFIG.BATCH_SIZE) {
     const batch = categoryUrls.slice(i, i + CONFIG.BATCH_SIZE);
@@ -167,21 +188,29 @@ const processCategories = async (categoryUrls: string[]) => {
       batch.map((url) =>
         CATEGORY_LIMIT(async () => {
           const result = await processCategoryPage(url);
-          return result.isOk() ? result.value : null;
+          if (result.isErr()) {
+            errorCount++;
+            return null;
+          }
+          return result.value;
         }),
       ),
     );
 
     categories.push(...results.filter((item): item is CategoryItem => item !== null));
-    if (i + CONFIG.BATCH_SIZE < categoryUrls.length) await delay(0);
+
+    if (i + CONFIG.BATCH_SIZE < categoryUrls.length) {
+      await delay(CONFIG.DELAY_BETWEEN_BATCHES);
+    }
   }
 
-  return { categories, errors };
+  console.log(`Processed ${categories.length} categories, ${errorCount} errors`);
+  return ok(categories);
 };
 
 // Extract blog URLs from category RSS feeds
-const extractBlogUrls = async (categories: CategoryItem[]) => {
-  const blogUrls: Array<{ url: string; categoryName: string; pathSegments: string[] }> = [];
+const extractBlogUrls = async (categories: CategoryItem[]): Promise<Result<BlogRssLink[], CrawlError>> => {
+  const blogUrls: BlogRssLink[] = [];
 
   for (let i = 0; i < categories.length; i += CONFIG.BATCH_SIZE) {
     const batch = categories.slice(i, i + CONFIG.BATCH_SIZE);
@@ -189,11 +218,10 @@ const extractBlogUrls = async (categories: CategoryItem[]) => {
     const results = await Promise.all(
       batch.map((category) =>
         RSS_LIMIT(async () => {
-          const feedResult = await fetchContent(category.rssFeedUrl);
-          if (feedResult.isErr()) return [];
-
-          const urlsResult = parseRssFeed(feedResult.value);
+          const urlsResult = await parseRssFeedFromUrl(category.rssFeedUrl);
           if (urlsResult.isErr()) return [];
+
+          console.log(`Found ${urlsResult.value.length} URLs in category: ${category.name}`);
 
           return limitArray(urlsResult.value, CONFIG.MAX_BLOGS_PER_CATEGORY).map((url) => ({
             url,
@@ -205,18 +233,23 @@ const extractBlogUrls = async (categories: CategoryItem[]) => {
     );
 
     blogUrls.push(...results.flat());
-    if (i + CONFIG.BATCH_SIZE < categories.length) await delay(150);
+
+    if (i + CONFIG.BATCH_SIZE < categories.length) {
+      await delay(CONFIG.DELAY_BETWEEN_BATCHES * 2);
+    }
   }
 
-  return blogUrls;
+  return ok(blogUrls);
 };
 
 // Extract RSS feed URL from blog page
-const extractBlogRssFeed = (htmlContent: string, blogUrl: string) => {
+const extractBlogRssFeed = (htmlContent: string, blogUrl: string): Result<string, CrawlError> => {
   return safeParseHTML(htmlContent).andThen(($) => {
     const selectors = [
       'link[rel="alternate"][type="application/rss+xml"]',
       'link[rel="alternate"][type="application/atom+xml"]',
+      'link[type="application/rss+xml"]',
+      'link[type="application/atom+xml"]',
     ];
 
     for (const selector of selectors) {
@@ -229,18 +262,25 @@ const extractBlogRssFeed = (htmlContent: string, blogUrl: string) => {
       }
     }
 
-    return err(new Error('No RSS feed found'));
+    return err({
+      message: 'No RSS feed found',
+      step: 'rss-extraction',
+      url: blogUrl,
+    });
   });
 };
 
 // Process blog pages to extract RSS feeds
-const processBlogPages = async (blogUrls: Array<{ url: string; categoryName: string; pathSegments: string[] }>) => {
-  const blogRssLinks: BlogRssLink[] = [];
+const processBlogPages = async (blogUrls: BlogRssLink[]): Promise<Result<BlogRssLink[], CrawlError>> => {
+  const uniqueBlogs = new Map<
+    string,
+    {
+      url: string;
+      categories: Array<{ name: string; pathSegments: string[] }>;
+    }
+  >();
 
-  // Deduplicate blogs
-  const uniqueBlogs = new Map<string, { url: string; categories: Array<{ name: string; pathSegments: string[] }> }>();
-
-  for (const blog of blogUrls) {
+  blogUrls.forEach((blog) => {
     if (uniqueBlogs.has(blog.url)) {
       uniqueBlogs.get(blog.url)!.categories.push({
         name: blog.categoryName,
@@ -252,9 +292,11 @@ const processBlogPages = async (blogUrls: Array<{ url: string; categoryName: str
         categories: [{ name: blog.categoryName, pathSegments: blog.pathSegments }],
       });
     }
-  }
+  });
 
   const blogs = Array.from(uniqueBlogs.values());
+  const blogRssLinks: BlogRssLink[] = [];
+
   console.log(`Processing ${blogs.length} unique blogs (deduplicated from ${blogUrls.length})`);
 
   for (let i = 0; i < blogs.length; i += CONFIG.BATCH_SIZE) {
@@ -269,6 +311,8 @@ const processBlogPages = async (blogUrls: Array<{ url: string; categoryName: str
           const rssFeedResult = extractBlogRssFeed(pageResult.value, blog.url);
           if (rssFeedResult.isErr()) return null;
 
+          console.log(`Found RSS feed for blog: ${blog.url} (${rssFeedResult.value})`);
+
           return blog.categories.map((category) => ({
             url: rssFeedResult.value,
             categoryName: category.name,
@@ -278,44 +322,49 @@ const processBlogPages = async (blogUrls: Array<{ url: string; categoryName: str
       ),
     );
 
-    const filteredResults = results.filter((item): item is BlogRssLink[] => item !== null);
-    blogRssLinks.push(...filteredResults.flat());
+    const validResults = results.filter((item): item is BlogRssLink[] => item !== null);
+    blogRssLinks.push(...validResults.flat());
 
-    if (i + CONFIG.BATCH_SIZE < blogs.length) await delay(200);
+    if (i + CONFIG.BATCH_SIZE < blogs.length) {
+      await delay(CONFIG.DELAY_BETWEEN_BATCHES * 3);
+    }
   }
 
-  return blogRssLinks;
+  return ok(blogRssLinks);
 };
 
-// Main crawler function
-const crawlRssFeeds = async () => {
+const crawlRssFeeds = async (): Promise<Result<CrawlResult, CrawlError>> => {
   console.log('Starting RSS feed crawling...');
   const startTime = Date.now();
 
   // Get category URLs
   const categoryUrlsResult = await getCategoryUrls();
-  if (categoryUrlsResult.isErr()) {
-    return err(new Error(`Failed to fetch categories: ${categoryUrlsResult.error.message}`));
-  }
+  if (categoryUrlsResult.isErr()) return err(categoryUrlsResult.error);
 
   console.log(`Found ${categoryUrlsResult.value.length} category URLs`);
 
-  // Process categories: Gets stuck here
-  const { categories } = await processCategories(categoryUrlsResult.value);
-  console.log(`Processed ${categories.length} categories with RSS feeds`);
+  // Process categories
+  const categoriesResult = await processCategories(categoryUrlsResult.value);
+  if (categoriesResult.isErr()) return err(categoriesResult.error);
+
+  console.log(`Processed ${categoriesResult.value.length} categories with RSS feeds`);
 
   // Extract blog URLs
-  const blogUrls = await extractBlogUrls(categories);
-  console.log(`Extracted ${blogUrls.length} blog URLs`);
+  const blogUrlsResult = await extractBlogUrls(categoriesResult.value);
+  if (blogUrlsResult.isErr()) return err(blogUrlsResult.error);
+
+  console.log(`Extracted ${blogUrlsResult.value.length} blog URLs`);
 
   // Process blog pages
-  const blogRssLinks = await processBlogPages(blogUrls);
-  console.log(`Found ${blogRssLinks.length} blog RSS links`);
+  const blogRssLinksResult = await processBlogPages(blogUrlsResult.value);
+  if (blogRssLinksResult.isErr()) return err(blogRssLinksResult.error);
+
+  console.log(`Found ${blogRssLinksResult.value.length} blog RSS links`);
 
   // Categorize results
-  const categorizedResults: Record<string, { pathSegments: string[]; blogRssLinks: string[] }> = {};
+  const categorizedResults: CrawlResult = {};
 
-  for (const link of blogRssLinks) {
+  blogRssLinksResult.value.forEach((link) => {
     if (!categorizedResults[link.categoryName]) {
       categorizedResults[link.categoryName] = {
         pathSegments: link.pathSegments,
@@ -326,7 +375,7 @@ const crawlRssFeeds = async () => {
     if (!categorizedResults[link.categoryName].blogRssLinks.includes(link.url)) {
       categorizedResults[link.categoryName].blogRssLinks.push(link.url);
     }
-  }
+  });
 
   const endTime = Date.now();
   console.log(`Crawling completed in ${(endTime - startTime) / 1000}s`);
@@ -335,36 +384,49 @@ const crawlRssFeeds = async () => {
   return ok(categorizedResults);
 };
 
-// Action export
 export const fetchAllFeedsAction = action({
   args: {},
   handler: async (ctx) => {
     const result = await crawlRssFeeds();
 
-    if (result.isErr()) {
-      return {
+    return result.match(
+      (data) => ({ success: true, data }),
+      (error) => ({
         success: false,
-        error: result.error.message,
-      };
-    }
-
-    return {
-      success: true,
-      data: result.value,
-    };
+        url: error.url,
+        step: error.step,
+        error: error.message,
+      }),
+    );
   },
 });
+
+// Usage example
+const runCrawler = async () => {
+  const result = await crawlRssFeeds();
+
+  result.match(
+    (data) => {
+      console.log('Crawl completed successfully');
+      console.log(`Found ${Object.keys(data).length} categories`);
+
+      Object.entries(data).forEach(([category, info]) => {
+        console.log(`${category}: ${info.blogRssLinks.length} RSS feeds`);
+      });
+    },
+    (error) => {
+      console.error(`Crawl failed at ${error.step}: ${error.message}`);
+      if (error.url) console.error(`URL: ${error.url}`);
+    },
+  );
+};
 
 // IIFE
 (async () => {
   try {
     const result = await crawlRssFeeds();
-    if (result.isErr()) {
-      console.error(`Crawl failed: ${result.error.message}`);
-    } else {
-      console.log('Crawl completed successfully:', result.value);
-    }
+    console.log('Crawl completed:', result);
   } catch (error) {
-    console.error('Unexpected error during crawl:', (error as Error).message);
+    console.error('Crawl failed:', error);
   }
 })();
