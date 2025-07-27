@@ -14,10 +14,13 @@ import type {
   FunctionReference,
 } from "convex/server";
 import type * as auth from "../auth.js";
+import type * as feeds from "../feeds.js";
 import type * as http from "../http.js";
-import type * as ingest_system_feeds from "../ingest_system_feeds.js";
+import type * as ooh_directory_rss_crawler from "../ooh_directory_rss_crawler.js";
 import type * as otp from "../otp.js";
+import type * as process_blog from "../process_blog.js";
 import type * as rss_parser from "../rss_parser.js";
+import type * as topics from "../topics.js";
 
 /**
  * A utility for referencing Convex functions in your app's API.
@@ -29,10 +32,13 @@ import type * as rss_parser from "../rss_parser.js";
  */
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  feeds: typeof feeds;
   http: typeof http;
-  ingest_system_feeds: typeof ingest_system_feeds;
+  ooh_directory_rss_crawler: typeof ooh_directory_rss_crawler;
   otp: typeof otp;
+  process_blog: typeof process_blog;
   rss_parser: typeof rss_parser;
+  topics: typeof topics;
 }>;
 export declare const api: FilterApi<
   typeof fullApi,
