@@ -18,6 +18,7 @@ import type * as briefs from "../briefs.js";
 import type * as crons from "../crons.js";
 import type * as feeds from "../feeds.js";
 import type * as http from "../http.js";
+import type * as preferences from "../preferences.js";
 import type * as rss_crawler from "../rss_crawler.js";
 import type * as rss_parser from "../rss_parser.js";
 import type * as topics from "../topics.js";
@@ -36,6 +37,7 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   feeds: typeof feeds;
   http: typeof http;
+  preferences: typeof preferences;
   rss_crawler: typeof rss_crawler;
   rss_parser: typeof rss_parser;
   topics: typeof topics;
