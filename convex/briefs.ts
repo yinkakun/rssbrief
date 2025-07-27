@@ -2,7 +2,7 @@ import ky from 'ky';
 import { generateText } from 'ai';
 import { safeParseRSS } from './rss_parser';
 import { createOpenAI } from '@ai-sdk/openai';
-import { ok, err, Result, fromPromise, fromThrowable } from 'neverthrow';
+import { ok, err, Result, fromPromise } from 'neverthrow';
 
 interface ArticleResult {
   url: string;

@@ -14,12 +14,11 @@ import type {
   FunctionReference,
 } from "convex/server";
 import type * as auth from "../auth.js";
+import type * as briefs from "../briefs.js";
 import type * as crons from "../crons.js";
 import type * as feeds from "../feeds.js";
 import type * as http from "../http.js";
-import type * as ooh_directory_rss_crawler from "../ooh_directory_rss_crawler.js";
-import type * as otp from "../otp.js";
-import type * as process_blog from "../process_blog.js";
+import type * as rss_crawler from "../rss_crawler.js";
 import type * as rss_parser from "../rss_parser.js";
 import type * as topics from "../topics.js";
 
@@ -33,12 +32,11 @@ import type * as topics from "../topics.js";
  */
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  briefs: typeof briefs;
   crons: typeof crons;
   feeds: typeof feeds;
   http: typeof http;
-  ooh_directory_rss_crawler: typeof ooh_directory_rss_crawler;
-  otp: typeof otp;
-  process_blog: typeof process_blog;
+  rss_crawler: typeof rss_crawler;
   rss_parser: typeof rss_parser;
   topics: typeof topics;
 }>;
