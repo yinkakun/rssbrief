@@ -15,10 +15,3 @@ function Index() {
     </main>
   );
 }
-
-// import { api } from 'convex/_generated/api';
-// import { useMutation } from 'convex/react';
-// import { convexQuery } from '@convex-dev/react-query';
-// import { useSuspenseQuery } from '@tanstack/react-query';
-// const addNumberMutation = useMutation(api.functions.addNumber);
-// const addNumberQuery = useSuspenseQuery(convexQuery(api.functions.listNumbers, { count: 10 }));
