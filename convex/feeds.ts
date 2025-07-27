@@ -4,10 +4,15 @@ import { Doc, Id } from './_generated/dataModel';
 import { safeParseRSS } from './rss_parser';
 import { internal } from './_generated/api';
 import { fromPromise } from 'neverthrow';
+import { getAuthUserId } from '@convex-dev/auth/server';
 
 export const getLatestArticles = query({
-  args: { userId: v.id('users'), limit: v.optional(v.number()), topicId: v.optional(v.id('topics')) },
-  handler: async (ctx, { userId, limit = 40, topicId }) => {
+  args: { limit: v.optional(v.number()), topicId: v.optional(v.id('topics')) },
+  handler: async (ctx, { limit = 40, topicId }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) {
+      throw new Error('Not authenticated');
+    }
     let userTopicsQuery = ctx.db.query('topicFeeds').withIndex('by_user', (q) => q.eq('userId', userId));
     if (topicId) {
       userTopicsQuery = userTopicsQuery.filter((q) => q.eq(q.field('topicId'), topicId));
