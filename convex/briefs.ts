@@ -1,8 +1,11 @@
 import ky from 'ky';
 import { generateText } from 'ai';
-import { safeParseRSS } from './rss_parser';
 import { createOpenAI } from '@ai-sdk/openai';
 import { ok, err, Result, fromPromise } from 'neverthrow';
+import { v } from 'convex/values';
+import { internalQuery, internalMutation, internalAction } from './_generated/server';
+import { internal } from './_generated/api';
+import { Id } from './_generated/dataModel';
 
 interface ArticleResult {
   url: string;
@@ -18,6 +21,20 @@ interface ArticleResult {
 interface ProcessingError {
   step: string;
   message: string;
+}
+
+interface BriefContent {
+  topics: Array<{
+    name: string;
+    articles: Array<{
+      title: string;
+      url: string;
+      summary: string;
+      translation?: string;
+    }>;
+  }>;
+  generatedAt: number;
+  userTimezone: string;
 }
 
 const openai = createOpenAI({
@@ -59,73 +76,267 @@ const safeExtractContent = (url: string) =>
     (error) => ({ message: `Content extraction failed: ${error}`, step: 'content-extraction' }),
   );
 
-const processArticleContent = async (url: string): Promise<Result<ArticleResult, ProcessingError>> => {
+const processArticleContent = async (url: string, targetLanguage?: string): Promise<Result<ArticleResult, ProcessingError>> => {
   const extractContentResult = await safeExtractContent(url);
   if (extractContentResult.isErr()) return err(extractContentResult.error);
 
   const extractedContent = extractContentResult.value.data;
 
   const summaryResult = await safeGenerateText(
-    `Provide a concise 3-sentence summary of this article:\n\n${extractContentResult.value}`,
+    `Provide a concise 2-sentence summary of this article:\n\n${extractedContent.content}`,
   );
   if (summaryResult.isErr()) return err(summaryResult.error);
 
-  const translationResults = await Promise.all([
-    safeGenerateText(`Translate to French, maintaining tone and meaning:\n\n${summaryResult.value}`),
-    safeGenerateText(`Translate to Spanish, maintaining tone and meaning:\n\n${summaryResult.value}`),
-  ]);
-
-  const [frenchResult, spanishResult] = translationResults;
-
-  if (frenchResult.isErr()) return err(frenchResult.error);
-  if (spanishResult.isErr()) return err(spanishResult.error);
+  const translations: Array<{ text: string; language: string; }> = [];
+  
+  if (targetLanguage && targetLanguage !== 'en') {
+    const translationResult = await safeGenerateText(
+      `Translate this summary to ${targetLanguage}, maintaining tone and meaning:\n\n${summaryResult.value}`
+    );
+    if (translationResult.isOk()) {
+      translations.push({ text: translationResult.value, language: targetLanguage });
+    }
+  }
 
   return ok({
     url,
     title: extractedContent.title,
     content: extractedContent.content,
     summary: summaryResult.value,
-    translations: [
-      { text: frenchResult.value, language: 'fr' },
-      { text: spanishResult.value, language: 'es' },
-    ],
+    translations,
   });
 };
 
-const getLatestFeedItem = async (feedUrl: string) => {
-  const itemsResult = await safeParseRSS(feedUrl);
-  if (itemsResult.isErr()) return err(itemsResult.error);
+export const getUserPreferences = internalQuery({
+  args: { userId: v.id('users') },
+  handler: async (ctx, { userId }) => {
+    return await ctx.db
+      .query('preferences')
+      .withIndex('by_user', (q) => q.eq('userId', userId))
+      .unique();
+  },
+});
 
-  const items = itemsResult.value;
-  const latestItem = items.items[0];
+export const getUsersReadyForBrief = internalQuery({
+  args: { dayOfWeek: v.number(), hour: v.number() },
+  handler: async (ctx, { dayOfWeek, hour }) => {
+    return await ctx.db
+      .query('preferences')
+      .withIndex('by_brief_schedule', (q) => 
+        q.eq('briefSchedule.dayOfWeek', dayOfWeek).eq('briefSchedule.hour', hour)
+      )
+      .collect();
+  },
+});
 
-  if (!latestItem?.link) {
-    return err({ message: 'No valid article link found', step: 'validation' });
+export const getRecentArticlesForUser = internalQuery({
+  args: { userId: v.id('users'), since: v.number() },
+  handler: async (ctx, { userId, since }) => {
+    const userTopics = await ctx.db
+      .query('topicFeeds')
+      .withIndex('by_user', (q) => q.eq('userId', userId))
+      .collect();
+
+    if (userTopics.length === 0) return [];
+
+    const feedIds = userTopics.map(t => t.feedId);
+    const allArticles = [];
+
+    for (const feedId of feedIds) {
+      const articles = await ctx.db
+        .query('articles')
+        .withIndex('by_feed_and_published', (q) => 
+          q.eq('feedId', feedId).gte('publishedAt', since)
+        )
+        .order('desc')
+        .take(5);
+      allArticles.push(...articles);
+    }
+
+    const topicMap = new Map();
+    for (const userTopic of userTopics) {
+      const topic = await ctx.db.get(userTopic.topicId);
+      if (topic) {
+        topicMap.set(userTopic.feedId, topic);
+      }
+    }
+
+    return allArticles
+      .sort((a, b) => b.publishedAt - a.publishedAt)
+      .slice(0, 20)
+      .map(article => ({
+        ...article,
+        topic: topicMap.get(article.feedId)
+      }))
+      .filter(article => article.topic);
+  },
+});
+
+export const createBrief = internalMutation({
+  args: {
+    userId: v.id('users'),
+    content: v.string(),
+  },
+  handler: async (ctx, { userId, content }) => {
+    return await ctx.db.insert('briefs', {
+      userId,
+      content,
+      status: 'pending',
+    });
+  },
+});
+
+export const updateBriefStatus = internalMutation({
+  args: {
+    briefId: v.id('briefs'),
+    status: v.union(v.literal('pending'), v.literal('sent'), v.literal('failed')),
+    sentAt: v.optional(v.number()),
+  },
+  handler: async (ctx, { briefId, status, sentAt }) => {
+    return await ctx.db.patch(briefId, { status, sentAt });
+  },
+});
+
+export const generateBriefForUser = internalAction({
+  args: { userId: v.id('users') },
+  handler: async (ctx, { userId }): Promise<Id<'briefs'> | undefined> => {
+    const preferences = await ctx.runQuery(internal.briefs.getUserPreferences, { userId });
+    if (!preferences) {
+      console.log(`No preferences found for user ${userId}`);
+      return;
+    }
+
+    const oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+    const articles = await ctx.runQuery(internal.briefs.getRecentArticlesForUser, {
+      userId,
+      since: oneWeekAgo,
+    });
+
+    if (articles.length === 0) {
+      console.log(`No recent articles found for user ${userId}`);
+      return;
+    }
+
+    const topicGroups = new Map<string, typeof articles>();
+    for (const article of articles) {
+      const topicName = article.topic.name;
+      if (!topicGroups.has(topicName)) {
+        topicGroups.set(topicName, []);
+      }
+      topicGroups.get(topicName)!.push(article);
+    }
+
+    const briefContent: BriefContent = {
+      topics: [],
+      generatedAt: Date.now(),
+      userTimezone: preferences.briefSchedule.timezone,
+    };
+
+    for (const [topicName, topicArticles] of topicGroups) {
+      const processedArticles = [];
+      
+      for (const article of topicArticles.slice(0, 3)) {
+        const targetLanguage = preferences.briefSchedule.translation.enabled
+          ? preferences.briefSchedule.translation.language
+          : undefined;
+
+        const processedResult = await processArticleContent(article.url, targetLanguage);
+        
+        if (processedResult.isOk()) {
+          const processed = processedResult.value;
+          processedArticles.push({
+            title: processed.title,
+            url: processed.url,
+            summary: processed.summary,
+            translation: processed.translations[0]?.text,
+          });
+        }
+      }
+
+      if (processedArticles.length > 0) {
+        briefContent.topics.push({
+          name: topicName,
+          articles: processedArticles,
+        });
+      }
+    }
+
+    if (briefContent.topics.length === 0) {
+      console.log(`No processable articles found for user ${userId}`);
+      return;
+    }
+
+    const briefText = formatBriefContent(briefContent);
+    const briefId: Id<'briefs'> = await ctx.runMutation(internal.briefs.createBrief, {
+      userId,
+      content: briefText,
+    });
+
+    console.log(`Brief generated for user ${userId}, briefId: ${briefId}`);
+    return briefId;
+  },
+});
+
+function formatBriefContent(content: BriefContent): string {
+  const date = new Date(content.generatedAt).toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    timeZone: content.userTimezone,
+  });
+
+  let brief = `# Your Weekly Brief - ${date}\n\n`;
+  brief += `Here's what's been happening in your followed topics:\n\n`;
+
+  for (const topic of content.topics) {
+    brief += `## ${topic.name}\n\n`;
+    
+    for (const article of topic.articles) {
+      brief += `### [${article.title}](${article.url})\n`;
+      brief += `${article.summary}\n`;
+      
+      if (article.translation) {
+        brief += `\n*Translation: ${article.translation}*\n`;
+      }
+      
+      brief += `\n---\n\n`;
+    }
   }
 
-  return ok(latestItem.link);
-};
+  brief += `\n*This brief was generated automatically based on your followed topics.*`;
+  return brief;
+}
 
-const processRSSFeed = async (feedUrl: string): Promise<Result<ArticleResult, ProcessingError>> => {
-  const urlResult = await getLatestFeedItem(feedUrl);
-  if (urlResult.isErr()) return err(urlResult.error);
+export const generateScheduledBriefs = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    const now = new Date();
+    const currentHour = now.getUTCHours();
+    const currentDayOfWeek = now.getUTCDay();
 
-  return processArticleContent(urlResult.value);
-};
+    console.log(`Checking for briefs to generate at UTC ${currentHour}:00 on day ${currentDayOfWeek}`);
 
-(async () => {
-  const result = await processRSSFeed('https://www.hellbox.co.uk/feed/');
+    for (let timezoneOffset = -12; timezoneOffset <= 14; timezoneOffset++) {
+      const localHour = (currentHour + timezoneOffset + 24) % 24;
+      const localDayOfWeek = currentDayOfWeek;
+      
+      const users = await ctx.runQuery(internal.briefs.getUsersReadyForBrief, {
+        dayOfWeek: localDayOfWeek,
+        hour: localHour,
+      });
 
-  result.match(
-    (article) => {
-      console.log('Success:', article.title);
-      console.log('Summary:', article.summary);
-      console.log('Translations:', article.translations);
-      process.exit(0);
-    },
-    (error) => {
-      console.log(`Error in ${error.step}: ${error.message}`);
-      process.exit(1);
-    },
-  );
-})();
+      console.log(`Found ${users.length} users ready for brief at local time ${localHour}:00`);
+
+      for (const user of users) {
+        try {
+          await ctx.runAction(internal.briefs.generateBriefForUser, {
+            userId: user.userId,
+          });
+        } catch (error) {
+          console.error(`Failed to generate brief for user ${user.userId}:`, error);
+        }
+      }
+    }
+  },
+});
