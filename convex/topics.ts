@@ -2,7 +2,8 @@ import { v } from 'convex/values';
 
 import { Id } from './_generated/dataModel';
 import { internal } from './_generated/api';
-import { internalQuery, internalMutation, MutationCtx } from './_generated/server';
+import { internalQuery, internalMutation, MutationCtx, query, mutation } from './_generated/server';
+import { getAuthUserId } from '@convex-dev/auth/server';
 
 export const getCuratedTopicByName = internalQuery({
   args: { name: v.string() },
@@ -121,5 +122,263 @@ export const getUserTopics = internalQuery({
         name: topic.name,
         tags: topic.tags,
       }));
+  },
+});
+
+export const getUserTopicsPublic = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) {
+      throw new Error('Not authenticated');
+    }
+
+    const userTopics = await ctx.db
+      .query('topics')
+      .withIndex('by_user', (q) => q.eq('userId', userId))
+      .collect();
+
+    const topicsWithFeeds = await Promise.all(
+      userTopics.map(async (topic) => {
+        const feeds = await ctx.db
+          .query('topicFeeds')
+          .withIndex('by_user_and_topic', (q) => q.eq('userId', userId).eq('topicId', topic._id))
+          .collect();
+
+        const feedDetails = await Promise.all(
+          feeds.map(async (tf) => {
+            const feed = await ctx.db.get(tf.feedId);
+            return feed ? { id: feed._id, url: feed.url, title: feed.title } : null;
+          })
+        );
+
+        return {
+          id: topic._id,
+          name: topic.name,
+          tags: topic.tags,
+          createdAt: topic.createdAt,
+          feeds: feedDetails.filter(Boolean),
+        };
+      })
+    );
+
+    return topicsWithFeeds;
+  },
+});
+
+export const createUserTopic = mutation({
+  args: {
+    name: v.string(),
+    tags: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, { name, tags = [] }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) {
+      throw new Error('Not authenticated');
+    }
+
+    const existingTopic = await ctx.db
+      .query('topics')
+      .withIndex('by_user_and_name', (q) => q.eq('userId', userId).eq('name', name))
+      .first();
+
+    if (existingTopic) {
+      throw new Error('Topic with this name already exists');
+    }
+
+    const topicId = await ctx.db.insert('topics', {
+      name,
+      tags,
+      userId,
+      createdAt: Date.now(),
+    });
+
+    return topicId;
+  },
+});
+
+export const updateUserTopic = mutation({
+  args: {
+    topicId: v.id('topics'),
+    name: v.optional(v.string()),
+    tags: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, { topicId, name, tags }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) {
+      throw new Error('Not authenticated');
+    }
+
+    const topic = await ctx.db.get(topicId);
+    if (!topic || topic.userId !== userId) {
+      throw new Error('Topic not found or access denied');
+    }
+
+    const updates: Partial<{ name: string; tags: string[] }> = {};
+    if (name !== undefined) {
+      const existingTopic = await ctx.db
+        .query('topics')
+        .withIndex('by_user_and_name', (q) => q.eq('userId', userId).eq('name', name))
+        .first();
+
+      if (existingTopic && existingTopic._id !== topicId) {
+        throw new Error('Topic with this name already exists');
+      }
+      updates.name = name;
+    }
+    if (tags !== undefined) updates.tags = tags;
+
+    await ctx.db.patch(topicId, updates);
+    return topicId;
+  },
+});
+
+export const deleteUserTopic = mutation({
+  args: {
+    topicId: v.id('topics'),
+  },
+  handler: async (ctx, { topicId }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) {
+      throw new Error('Not authenticated');
+    }
+
+    const topic = await ctx.db.get(topicId);
+    if (!topic || topic.userId !== userId) {
+      throw new Error('Topic not found or access denied');
+    }
+
+    const topicFeeds = await ctx.db
+      .query('topicFeeds')
+      .withIndex('by_user_and_topic', (q) => q.eq('userId', userId).eq('topicId', topicId))
+      .collect();
+
+    for (const topicFeed of topicFeeds) {
+      await ctx.db.delete(topicFeed._id);
+    }
+
+    await ctx.db.delete(topicId);
+    return topicId;
+  },
+});
+
+export const addRSSUrlToTopic = mutation({
+  args: {
+    topicId: v.id('topics'),
+    rssUrl: v.string(),
+    feedTitle: v.optional(v.string()),
+  },
+  handler: async (ctx, { topicId, rssUrl, feedTitle }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) {
+      throw new Error('Not authenticated');
+    }
+
+    const topic = await ctx.db.get(topicId);
+    if (!topic || topic.userId !== userId) {
+      throw new Error('Topic not found or access denied');
+    }
+
+    let feed = await ctx.db
+      .query('feeds')
+      .withIndex('by_url', (q) => q.eq('url', rssUrl))
+      .first();
+
+    if (!feed) {
+      const feedId = await ctx.db.insert('feeds', {
+        url: rssUrl,
+        title: feedTitle || topic.name,
+      });
+      feed = await ctx.db.get(feedId);
+    }
+
+    if (!feed) {
+      throw new Error('Failed to create or retrieve feed');
+    }
+
+    const existingRelation = await ctx.db
+      .query('topicFeeds')
+      .withIndex('by_user_and_topic', (q) => q.eq('userId', userId).eq('topicId', topicId))
+      .filter((q) => q.eq(q.field('feedId'), feed._id))
+      .first();
+
+    if (existingRelation) {
+      throw new Error('RSS feed already added to this topic');
+    }
+
+    const relationId = await ctx.db.insert('topicFeeds', {
+      topicId,
+      feedId: feed._id,
+      userId,
+    });
+
+    return relationId;
+  },
+});
+
+export const removeRSSUrlFromTopic = mutation({
+  args: {
+    topicId: v.id('topics'),
+    feedId: v.id('feeds'),
+  },
+  handler: async (ctx, { topicId, feedId }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) {
+      throw new Error('Not authenticated');
+    }
+
+    const topic = await ctx.db.get(topicId);
+    if (!topic || topic.userId !== userId) {
+      throw new Error('Topic not found or access denied');
+    }
+
+    const relation = await ctx.db
+      .query('topicFeeds')
+      .withIndex('by_user_and_topic', (q) => q.eq('userId', userId).eq('topicId', topicId))
+      .filter((q) => q.eq(q.field('feedId'), feedId))
+      .first();
+
+    if (!relation) {
+      throw new Error('RSS feed not found in this topic');
+    }
+
+    await ctx.db.delete(relation._id);
+    return relation._id;
+  },
+});
+
+export const getTopicFeedsForUser = query({
+  args: {
+    topicId: v.id('topics'),
+  },
+  handler: async (ctx, { topicId }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) {
+      throw new Error('Not authenticated');
+    }
+
+    const topic = await ctx.db.get(topicId);
+    if (!topic || topic.userId !== userId) {
+      throw new Error('Topic not found or access denied');
+    }
+
+    const topicFeeds = await ctx.db
+      .query('topicFeeds')
+      .withIndex('by_user_and_topic', (q) => q.eq('userId', userId).eq('topicId', topicId))
+      .collect();
+
+    const feeds = await Promise.all(
+      topicFeeds.map(async (tf) => {
+        const feed = await ctx.db.get(tf.feedId);
+        return feed ? {
+          id: feed._id,
+          url: feed.url,
+          title: feed.title,
+          updatedAt: feed.updatedAt,
+        } : null;
+      })
+    );
+
+    return feeds.filter(Boolean);
   },
 });

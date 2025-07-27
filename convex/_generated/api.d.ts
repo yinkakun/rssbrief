@@ -21,6 +21,7 @@ import type * as http from "../http.js";
 import type * as preferences from "../preferences.js";
 import type * as rss_crawler from "../rss_crawler.js";
 import type * as rss_parser from "../rss_parser.js";
+import type * as saved_articles from "../saved_articles.js";
 import type * as topics from "../topics.js";
 
 /**
@@ -40,6 +41,7 @@ declare const fullApi: ApiFromModules<{
   preferences: typeof preferences;
   rss_crawler: typeof rss_crawler;
   rss_parser: typeof rss_parser;
+  saved_articles: typeof saved_articles;
   topics: typeof topics;
 }>;
 export declare const api: FilterApi<
