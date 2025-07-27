@@ -3,6 +3,7 @@ import { query, internalQuery, internalMutation, internalAction } from './_gener
 import { Doc, Id } from './_generated/dataModel';
 import { safeParseRSS } from './rss_parser';
 import { internal } from './_generated/api';
+import { fromPromise } from 'neverthrow';
 
 export const getLatestArticles = query({
   args: { userId: v.id('users'), limit: v.optional(v.number()), topicId: v.optional(v.id('topics')) },
@@ -170,86 +171,93 @@ export const updateAllFeeds = internalAction({
     console.log(`Processing ${validFeeds.length} feeds with follows`);
 
     for (const feed of validFeeds) {
-      try {
-        console.log(`Processing feed: ${feed.title} (${feed.url})`);
+      console.log(`Processing feed: ${feed.title} (${feed.url})`);
 
-        const rssResult = await safeParseRSS(feed.url);
-        if (rssResult.isErr()) {
-          console.error(`Failed to parse RSS for ${feed.url}:`, rssResult.error);
-          continue;
+      const rssResult = await safeParseRSS(feed.url);
+      if (rssResult.isErr()) {
+        console.error(`Failed to parse RSS for ${feed.url}:`, rssResult.error);
+        continue;
+      }
+
+      const { items } = rssResult.value;
+      if (!items || items.length === 0) {
+        console.log(`No items found for feed: ${feed.url}`);
+        continue;
+      }
+
+      const isFirstFetch = !feed.updatedAt;
+      const cutoffDate = isFirstFetch ? sevenDaysAgo : feed.updatedAt;
+
+      const newArticles = [];
+      for (const item of items) {
+        if (!item.link) continue;
+
+        let publishedAt = now;
+        if (item.pubDate) {
+          const parsed = new Date(item.pubDate).getTime();
+          if (!isNaN(parsed)) publishedAt = parsed;
         }
 
-        const { items } = rssResult.value;
-        if (!items || items.length === 0) {
-          console.log(`No items found for feed: ${feed.url}`);
-          continue;
-        }
+        if (publishedAt < (cutoffDate || 0)) continue;
 
-        const isFirstFetch = !feed.updatedAt;
-        const cutoffDate = isFirstFetch ? sevenDaysAgo : feed.updatedAt;
-
-        const newArticles = [];
-        for (const item of items) {
-          if (!item.link) continue;
-
-          let publishedAt = now;
-          if (item.pubDate) {
-            const parsed = new Date(item.pubDate).getTime();
-            if (!isNaN(parsed)) publishedAt = parsed;
-          }
-
-          if (publishedAt < (cutoffDate || 0)) continue;
-
-          const existing = await ctx.runQuery(internal.feeds.getExistingArticleByUrl, {
-            url: item.link,
-          });
-
-          if (existing) {
-            console.log(`Article already exists: ${item.link}`);
-            continue;
-          }
-
-          try {
-            const response = await fetch(`https://r.jina.ai/${encodeURIComponent(item.link)}`, {
-              headers: { accept: 'application/json' },
-              signal: AbortSignal.timeout(10000),
-            });
-
-            if (!response.ok) {
-              console.error(`Content extraction failed for ${item.link}: ${response.status}`);
-              continue;
-            }
-
-            const data = (await response.json()) as {
-              data: { title: string; content: string };
-            };
-
-            newArticles.push({
-              publishedAt,
-              url: item.link,
-              feedId: feed._id,
-              title: data.data.title,
-              content: data.data.content,
-            });
-          } catch (error) {
-            console.error(`Error extracting content for ${item.link}:`, error);
-            continue;
-          }
-        }
-
-        for (const article of newArticles) {
-          await ctx.runMutation(internal.feeds.insertArticle, article);
-        }
-
-        await ctx.runMutation(internal.feeds.updateFeedTimestamp, {
-          feedId: feed._id,
-          updatedAt: now,
+        const existing = await ctx.runQuery(internal.feeds.getExistingArticleByUrl, {
+          url: item.link,
         });
 
-        console.log(`Added ${newArticles.length} new articles for feed: ${feed.title}`);
-      } catch (error) {
-        console.error(`Error processing feed ${feed.url}:`, error);
+        if (existing) {
+          console.log(`Article already exists: ${item.link}`);
+          continue;
+        }
+
+        const contentResult = await fromPromise(
+          fetch(`https://r.jina.ai/${encodeURIComponent(item.link)}`, {
+            headers: { accept: 'application/json' },
+            signal: AbortSignal.timeout(10000),
+          }),
+          (error) => ({ message: `Fetch failed: ${error}`, step: 'fetch', url: item.link }),
+        );
+
+        if (contentResult.isErr()) {
+          console.error(`Error fetching content for ${item.link}:`, contentResult.error);
+          continue;
+        }
+
+        const response = contentResult.value;
+        if (!response.ok) {
+          console.error(`Content extraction failed for ${item.link}: ${response.status}`);
+          continue;
+        }
+
+        const dataResult = await fromPromise(
+          response.json() as Promise<{ data: { title: string; content: string } }>,
+          (error) => ({ message: `JSON parse failed: ${error}`, step: 'json-parse', url: item.link }),
+        );
+
+        if (dataResult.isErr()) {
+          console.error(`Error parsing JSON for ${item.link}:`, dataResult.error);
+          continue;
+        }
+
+        const data = dataResult.value;
+        newArticles.push({
+          publishedAt,
+          url: item.link,
+          feedId: feed._id,
+          title: data.data.title || 'Untitled',
+          content: data.data.content || '',
+        });
       }
+
+      for (const article of newArticles) {
+        await ctx.runMutation(internal.feeds.insertArticle, article);
+      }
+
+      await ctx.runMutation(internal.feeds.updateFeedTimestamp, {
+        feedId: feed._id,
+        updatedAt: now,
+      });
+
+      console.log(`Added ${newArticles.length} new articles for feed: ${feed.title}`);
     }
 
     console.log('Feed update completed');
