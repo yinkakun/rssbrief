@@ -1,9 +1,12 @@
-import { action } from './_generated/server';
 import ky from 'ky';
+import pLimit from 'p-limit';
+import { v } from 'convex/values';
 import * as cheerio from 'cheerio';
 import { ok, err, Result, fromPromise, fromThrowable } from 'neverthrow';
-import pLimit from 'p-limit';
+
+import { internal } from './_generated/api';
 import { safeParseRSS } from './rss_parser';
+import { internalAction } from './_generated/server';
 
 interface CategoryRss {
   name: string;
@@ -41,9 +44,7 @@ const CONFIG = {
   MAX_CATEGORIES_TO_PROCESS: 50,
 } as const;
 
-const RSS_LIMIT = pLimit(100);
-const BLOG_LIMIT = pLimit(100);
-const CATEGORY_LIMIT = pLimit(100);
+const CONCURRENCY_LIMIT = pLimit(100);
 
 const urlCache = new Map<string, string>();
 const contentCache = new Map<string, string>();
@@ -97,7 +98,6 @@ const fetchContent = (url: string, shouldCache = true) => {
   );
 };
 
-// Parse RSS feed and extract blog URLs
 const parseRssFeedFromUrl = async (feedUrl: string): Promise<Result<string[], CrawlError>> => {
   return safeParseRSS(feedUrl).then((result) => {
     if (result.isErr()) return err(result.error);
@@ -112,8 +112,7 @@ const parseRssFeedFromUrl = async (feedUrl: string): Promise<Result<string[], Cr
   });
 };
 
-// Get category URLs from sitemap
-const extractCategoryUrls = async (): Promise<Result<string[], CrawlError>> => {
+const extractCategoryUrlsFromSitemap = async (): Promise<Result<string[], CrawlError>> => {
   return fetchContent('https://ooh.directory/sitemap-categories.xml').then((result) => {
     if (result.isErr()) return err(result.error);
 
@@ -133,7 +132,6 @@ const extractCategoryUrls = async (): Promise<Result<string[], CrawlError>> => {
   });
 };
 
-// Extract RSS feed URL from category page
 const extractCategoryRssFeed = async (categoryUrl: string): Promise<Result<CategoryRss, CrawlError>> => {
   const htmlResult = await fetchContent(categoryUrl);
   if (htmlResult.isErr()) return err(htmlResult.error);
@@ -169,8 +167,7 @@ const extractCategoryRssFeed = async (categoryUrl: string): Promise<Result<Categ
   });
 };
 
-// Process categories in batches
-const processCategories = async (categoryUrls: string[]): Promise<Result<CategoryRss[], CrawlError>> => {
+const extractRssFeedsFromCategories = async (categoryUrls: string[]): Promise<Result<CategoryRss[], CrawlError>> => {
   const categories: CategoryRss[] = [];
   let errorCount = 0;
 
@@ -179,7 +176,7 @@ const processCategories = async (categoryUrls: string[]): Promise<Result<Categor
 
     const results = await Promise.all(
       batch.map((url) =>
-        CATEGORY_LIMIT(async () => {
+        CONCURRENCY_LIMIT(async () => {
           const result = await extractCategoryRssFeed(url);
           if (result.isErr()) {
             console.warn(`Error processing category ${url}: ${result.error.message}`);
@@ -198,11 +195,10 @@ const processCategories = async (categoryUrls: string[]): Promise<Result<Categor
     }
   }
 
-  console.log(`Processed ${categories.length} categories, ${errorCount} errors`);
+  console.log(`Extracted ${categories.length} categories, ${errorCount} errors`);
   return ok(categories);
 };
 
-// Extract blog URLs from category RSS feeds
 const extractBlogUrls = async (categories: CategoryRss[]): Promise<Result<BlogRssLink[], CrawlError>> => {
   const blogUrls: BlogRssLink[] = [];
 
@@ -211,7 +207,7 @@ const extractBlogUrls = async (categories: CategoryRss[]): Promise<Result<BlogRs
 
     const results = await Promise.all(
       batch.map((category) =>
-        RSS_LIMIT(async () => {
+        CONCURRENCY_LIMIT(async () => {
           const urlsResult = await parseRssFeedFromUrl(category.rssFeedUrl);
           if (urlsResult.isErr()) return [];
 
@@ -234,7 +230,6 @@ const extractBlogUrls = async (categories: CategoryRss[]): Promise<Result<BlogRs
   return ok(blogUrls);
 };
 
-// Extract RSS feed URL from blog page
 const extractBlogRssFeed = (htmlContent: string, blogUrl: string): Result<string, CrawlError> => {
   return safeParseHTML(htmlContent).andThen(($) => {
     const selectors = [
@@ -262,8 +257,7 @@ const extractBlogRssFeed = (htmlContent: string, blogUrl: string): Result<string
   });
 };
 
-// Process blog pages to extract RSS feeds
-const processBlogPages = async (blogUrls: BlogRssLink[]): Promise<Result<BlogRssLink[], CrawlError>> => {
+const extractRssFeedsFromBlogs = async (blogUrls: BlogRssLink[]): Promise<Result<BlogRssLink[], CrawlError>> => {
   const uniqueBlogs = new Map<
     string,
     {
@@ -296,7 +290,7 @@ const processBlogPages = async (blogUrls: BlogRssLink[]): Promise<Result<BlogRss
 
     const results = await Promise.all(
       batch.map((blog) =>
-        BLOG_LIMIT(async () => {
+        CONCURRENCY_LIMIT(async () => {
           const pageResult = await fetchContent(blog.url, false);
           if (pageResult.isErr()) return null;
 
@@ -328,27 +322,27 @@ const crawlRssFeeds = async (): Promise<Result<CrawlResult, CrawlError>> => {
   const startTime = Date.now();
 
   // Get category page URLs
-  const categoryUrlsResult = await extractCategoryUrls();
+  const categoryUrlsResult = await extractCategoryUrlsFromSitemap();
   if (categoryUrlsResult.isErr()) return err(categoryUrlsResult.error);
 
   const categoryUrls = limitArray(categoryUrlsResult.value, CONFIG.MAX_CATEGORIES_TO_PROCESS);
 
   console.log(`Found ${categoryUrlsResult.value.length} category URLs, Processing up to ${categoryUrls.length}`);
 
-  // Process categories to get RSS feeds
-  const categoriesResult = await processCategories(categoryUrls);
+  // Extract RSS feeds from categories
+  const categoriesResult = await extractRssFeedsFromCategories(categoryUrls);
   if (categoriesResult.isErr()) return err(categoriesResult.error);
 
   console.log(`Processed ${categoriesResult.value.length} categories with RSS feeds`);
 
-  // Extract blog URLs
+  // Extract blog URLs from category RSS feeds
   const blogUrlsResult = await extractBlogUrls(categoriesResult.value);
   if (blogUrlsResult.isErr()) return err(blogUrlsResult.error);
 
   console.log(`Extracted ${blogUrlsResult.value.length} blog URLs`);
 
-  // Process blog pages to get RSS links
-  const blogRssLinksResult = await processBlogPages(blogUrlsResult.value);
+  //  Extract RSS links from blog pages
+  const blogRssLinksResult = await extractRssFeedsFromBlogs(blogUrlsResult.value);
   if (blogRssLinksResult.isErr()) return err(blogRssLinksResult.error);
 
   console.log(`Found ${blogRssLinksResult.value.length} blog RSS links`);
@@ -378,18 +372,26 @@ const crawlRssFeeds = async (): Promise<Result<CrawlResult, CrawlError>> => {
   return ok(categorizedResults);
 };
 
-export const fetchAllFeedsAction = action({
+export const triggerRssCrawler = internalAction({
   args: {},
   handler: async (ctx) => {
     const result = await crawlRssFeeds();
-    return result.match(
-      (data) => ({ success: true, data }),
-      (error) => ({
-        success: false,
-        url: error.url,
-        step: error.step,
-        error: error.message,
-      }),
-    );
+
+    if (result.isErr()) {
+      console.error(`Crawl failed: ${result.error.message}`);
+      return err(result.error);
+    }
+
+    const topics = Object.entries(result.value).map(([name, data]) => ({
+      name,
+      tags: data.pathSegments,
+      rssUrls: data.blogRssLinks,
+    }));
+
+    console.log(`Importing ${topics.length} topics into Convex...`);
+    await ctx.runMutation(internal.topics.importCuratedTopics, { topics });
+
+    console.log(`Crawl completed successfully, imported ${topics.length} topics`);
+    return { message: `Crawl completed successfully, imported ${topics.length} topics` };
   },
 });
