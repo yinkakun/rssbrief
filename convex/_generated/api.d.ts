@@ -14,6 +14,7 @@ import type {
   FunctionReference,
 } from "convex/server";
 import type * as auth from "../auth.js";
+import type * as crons from "../crons.js";
 import type * as feeds from "../feeds.js";
 import type * as http from "../http.js";
 import type * as ooh_directory_rss_crawler from "../ooh_directory_rss_crawler.js";
@@ -32,6 +33,7 @@ import type * as topics from "../topics.js";
  */
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  crons: typeof crons;
   feeds: typeof feeds;
   http: typeof http;
   ooh_directory_rss_crawler: typeof ooh_directory_rss_crawler;
