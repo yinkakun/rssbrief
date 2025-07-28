@@ -26,24 +26,21 @@ export default defineSchema({
     name: v.string(),
     createdAt: v.number(),
     tags: v.array(v.string()),
-    userId: v.union(v.id('users'), v.null()), // null for curated topics, set for user topics
+    userId: v.union(v.id('users'), v.null()),
   })
     .index('by_user', ['userId'])
-    .index('by_user_and_name', ['userId', 'name'])
-    .index('by_created_at', ['createdAt']),
+    .index('by_user_and_name', ['userId', 'name']),
 
   feeds: defineTable({
     url: v.string(),
     title: v.string(),
     updatedAt: v.optional(v.number()),
-  })
-    .index('by_url', ['url'])
-    .index('by_updated_at', ['updatedAt']),
+  }).index('by_url', ['url']),
 
   topicFeeds: defineTable({
     feedId: v.id('feeds'),
     topicId: v.id('topics'),
-    userId: v.union(v.id('users'), v.null()), // null for curated topics
+    userId: v.union(v.id('users'), v.null()),
   })
     .index('by_user', ['userId'])
     .index('by_topic', ['topicId'])
@@ -58,10 +55,9 @@ export default defineSchema({
     feedId: v.id('feeds'),
     publishedAt: v.number(),
   })
+    .index('by_url', ['url'])
     .index('by_feed', ['feedId'])
-    .index('by_published_at', ['publishedAt'])
-    .index('by_feed_and_published', ['feedId', 'publishedAt'])
-    .index('by_url', ['url']),
+    .index('by_feed_and_published', ['feedId', 'publishedAt']),
 
   briefs: defineTable({
     userId: v.id('users'),
@@ -70,14 +66,12 @@ export default defineSchema({
     status: v.union(v.literal('pending'), v.literal('sent'), v.literal('failed')),
   })
     .index('by_user', ['userId'])
-    .index('by_status', ['status'])
-    .index('by_user_and_status', ['userId', 'status'])
-    .index('by_sent_at', ['sentAt']),
+    .index('by_user_and_status', ['userId', 'status']),
 
   savedArticles: defineTable({
+    savedAt: v.number(),
     userId: v.id('users'),
     articleId: v.id('articles'),
-    savedAt: v.number(),
   })
     .index('by_user', ['userId'])
     .index('by_article', ['articleId'])
