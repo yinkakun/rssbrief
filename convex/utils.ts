@@ -19,7 +19,7 @@ export const AI_CONFIG = {
   model: openai('gpt-4o-mini'),
 } as const;
 
-export const httpClient = ky.create({
+const httpClient = ky.create({
   timeout: 8000,
   retry: 2,
   headers: {
@@ -33,7 +33,7 @@ export const safeGenerateText = (prompt: string) =>
     (error) => ({ message: `AI generation failed: ${error}`, step: 'ai-generation' }),
   );
 
-export interface ExtractedContentResponse {
+interface ExtractedContentResponse {
   code: number;
   status: number;
   data: {
@@ -104,7 +104,7 @@ export const slugify = (str: string): string =>
 
 export const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export const formatDateForBrief = (timestamp: number, timezone: string): string => {
+const formatDateForBrief = (timestamp: number, timezone: string): string => {
   return new Date(timestamp).toLocaleDateString('en-US', {
     weekday: 'long',
     year: 'numeric',
@@ -168,8 +168,8 @@ export const formatBriefContent = (content: BriefContent): string => {
 
 interface calculateNextBriefTimeOpts {
   now?: Date;
-  scheduledHour: number;
   timezone: string;
+  scheduledHour: number;
   scheduledDayOfWeek: number;
 }
 
@@ -210,8 +210,6 @@ export const requireAuth = (userId: Id<'users'> | null) => {
   }
   return userId;
 };
-
-export const createTopicFeedKey = (topicId: string, feedId: string) => `${topicId}:${feedId}`;
 
 export const BATCH_CONFIG = {
   DEFAULT_SIZE: 20,
