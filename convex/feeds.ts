@@ -1,18 +1,17 @@
 import { v } from 'convex/values';
-import { query, internalQuery, internalMutation, internalAction } from './_generated/server';
-import { Doc, Id } from './_generated/dataModel';
-import { safeParseRSS } from './rss_parser';
-import { internal } from './_generated/api';
 import { fromPromise } from 'neverthrow';
 import { getAuthUserId } from '@convex-dev/auth/server';
+
+import { internal } from './_generated/api';
+import { safeParseRSS } from './rss_parser';
+import { Doc, Id } from './_generated/dataModel';
+import { TIME_CONSTANTS, requireAuth } from './utils';
+import { query, internalQuery, internalMutation, internalAction } from './_generated/server';
 
 export const getLatestArticles = query({
   args: { limit: v.optional(v.number()), topicId: v.optional(v.id('topics')) },
   handler: async (ctx, { limit = 40, topicId }) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) {
-      throw new Error('Not authenticated');
-    }
+    const userId: Id<'users'> = requireAuth(await getAuthUserId(ctx));
     let userTopicsQuery = ctx.db.query('topicFeeds').withIndex('by_user', (q) => q.eq('userId', userId));
     if (topicId) {
       userTopicsQuery = userTopicsQuery.filter((q) => q.eq(q.field('topicId'), topicId));
@@ -142,7 +141,7 @@ export const updateAllFeeds = internalAction({
   args: {},
   handler: async (ctx) => {
     const now = Date.now();
-    const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
+    const sevenDaysAgo = now - TIME_CONSTANTS.ONE_WEEK;
 
     const topicFeeds = await ctx.runQuery(internal.feeds.getTopicFeeds);
     const feedFollowCounts = new Map<Id<'feeds'>, number>();

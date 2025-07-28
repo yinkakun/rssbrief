@@ -1,16 +1,14 @@
 import { v } from 'convex/values';
 import { query, mutation } from './_generated/server';
 import { getAuthUserId } from '@convex-dev/auth/server';
+import { requireAuth } from './utils';
 
 export const saveArticle = mutation({
   args: {
     articleId: v.id('articles'),
   },
   handler: async (ctx, { articleId }) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) {
-      throw new Error('Not authenticated');
-    }
+    const userId = requireAuth(await getAuthUserId(ctx));
 
     const article = await ctx.db.get(articleId);
     if (!article) {
@@ -41,10 +39,7 @@ export const unsaveArticle = mutation({
     articleId: v.id('articles'),
   },
   handler: async (ctx, { articleId }) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) {
-      throw new Error('Not authenticated');
-    }
+    const userId = requireAuth(await getAuthUserId(ctx));
 
     const savedArticle = await ctx.db
       .query('savedArticles')
@@ -66,10 +61,7 @@ export const getSavedArticles = query({
     offset: v.optional(v.number()),
   },
   handler: async (ctx, { limit = 20, offset = 0 }) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) {
-      throw new Error('Not authenticated');
-    }
+    const userId = requireAuth(await getAuthUserId(ctx));
 
     const savedArticles = await ctx.db
       .query('savedArticles')
@@ -129,10 +121,7 @@ export const isArticleSaved = query({
     articleId: v.id('articles'),
   },
   handler: async (ctx, { articleId }) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) {
-      throw new Error('Not authenticated');
-    }
+    const userId = requireAuth(await getAuthUserId(ctx));
 
     const savedArticle = await ctx.db
       .query('savedArticles')
@@ -146,10 +135,7 @@ export const isArticleSaved = query({
 export const getSavedArticlesCount = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) {
-      throw new Error('Not authenticated');
-    }
+    const userId = requireAuth(await getAuthUserId(ctx));
 
     const savedArticles = await ctx.db
       .query('savedArticles')
@@ -166,10 +152,7 @@ export const getSavedArticlesByTopic = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, { topicId, limit = 20 }) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) {
-      throw new Error('Not authenticated');
-    }
+    const userId = requireAuth(await getAuthUserId(ctx));
 
     const topic = await ctx.db.get(topicId);
     if (!topic) {

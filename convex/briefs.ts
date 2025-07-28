@@ -1,11 +1,18 @@
-import ky from 'ky';
-import { generateText } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
-import { ok, err, Result, fromPromise } from 'neverthrow';
 import { v } from 'convex/values';
-import { internalQuery, internalMutation, internalAction } from './_generated/server';
-import { internal } from './_generated/api';
+import { ok, err, Result } from 'neverthrow';
+
 import { Id } from './_generated/dataModel';
+import { internal } from './_generated/api';
+import { internalQuery, internalMutation, internalAction } from './_generated/server';
+import {
+  BriefContent,
+  TIME_CONSTANTS,
+  safeGenerateText,
+  ProcessingError,
+  formatBriefContent,
+  safeExtractContent,
+  calculateNextBriefTime,
+} from './utils';
 
 interface ArticleResult {
   url: string;
@@ -18,65 +25,10 @@ interface ArticleResult {
   }>;
 }
 
-interface ProcessingError {
-  step: string;
-  message: string;
-}
-
-interface BriefContent {
-  topics: Array<{
-    name: string;
-    articles: Array<{
-      title: string;
-      url: string;
-      summary: string;
-      translation?: string;
-    }>;
-  }>;
-  generatedAt: number;
-  userTimezone: string;
-}
-
-const openai = createOpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-const AI_CONFIG = {
-  maxTokens: 500,
-  model: openai('gpt-4o-mini'),
-} as const;
-
-const safeGenerateText = (prompt: string) =>
-  fromPromise(
-    generateText({ prompt, ...AI_CONFIG }).then((r) => r.text),
-    (error) => ({ message: `AI generation failed: ${error}`, step: 'ai-generation' }),
-  );
-
-interface ExtractedContentResponse {
-  code: number;
-  status: number;
-  data: {
-    title: string;
-    description: string;
-    url: string;
-    content: string;
-  };
-}
-
-const safeExtractContent = (url: string) =>
-  fromPromise(
-    ky
-      .get(`https://r.jina.ai/${encodeURIComponent(url)}`, {
-        timeout: 10000,
-        headers: {
-          accept: 'application/json',
-        },
-      })
-      .then((response) => response.json<ExtractedContentResponse>()),
-    (error) => ({ message: `Content extraction failed: ${error}`, step: 'content-extraction' }),
-  );
-
-const processArticleContent = async (url: string, targetLanguage?: string): Promise<Result<ArticleResult, ProcessingError>> => {
+const processArticleContent = async (
+  url: string,
+  targetLanguage?: string,
+): Promise<Result<ArticleResult, ProcessingError>> => {
   const extractContentResult = await safeExtractContent(url);
   if (extractContentResult.isErr()) return err(extractContentResult.error);
 
@@ -87,11 +39,11 @@ const processArticleContent = async (url: string, targetLanguage?: string): Prom
   );
   if (summaryResult.isErr()) return err(summaryResult.error);
 
-  const translations: Array<{ text: string; language: string; }> = [];
-  
+  const translations: Array<{ text: string; language: string }> = [];
+
   if (targetLanguage && targetLanguage !== 'en') {
     const translationResult = await safeGenerateText(
-      `Translate this summary to ${targetLanguage}, maintaining tone and meaning:\n\n${summaryResult.value}`
+      `Translate this summary to ${targetLanguage}, maintaining tone and meaning:\n\n${summaryResult.value}`,
     );
     if (translationResult.isOk()) {
       translations.push({ text: translationResult.value, language: targetLanguage });
@@ -122,9 +74,7 @@ export const getUsersReadyForBrief = internalQuery({
   handler: async (ctx, { dayOfWeek, hour }) => {
     return await ctx.db
       .query('preferences')
-      .withIndex('by_brief_schedule', (q) => 
-        q.eq('briefSchedule.dayOfWeek', dayOfWeek).eq('briefSchedule.hour', hour)
-      )
+      .withIndex('by_brief_schedule', (q) => q.eq('briefSchedule.dayOfWeek', dayOfWeek).eq('briefSchedule.hour', hour))
       .collect();
   },
 });
@@ -139,15 +89,13 @@ export const getRecentArticlesForUser = internalQuery({
 
     if (userTopics.length === 0) return [];
 
-    const feedIds = userTopics.map(t => t.feedId);
+    const feedIds = userTopics.map((t) => t.feedId);
     const allArticles = [];
 
     for (const feedId of feedIds) {
       const articles = await ctx.db
         .query('articles')
-        .withIndex('by_feed_and_published', (q) => 
-          q.eq('feedId', feedId).gte('publishedAt', since)
-        )
+        .withIndex('by_feed_and_published', (q) => q.eq('feedId', feedId).gte('publishedAt', since))
         .order('desc')
         .take(5);
       allArticles.push(...articles);
@@ -164,11 +112,11 @@ export const getRecentArticlesForUser = internalQuery({
     return allArticles
       .sort((a, b) => b.publishedAt - a.publishedAt)
       .slice(0, 20)
-      .map(article => ({
+      .map((article) => ({
         ...article,
-        topic: topicMap.get(article.feedId)
+        topic: topicMap.get(article.feedId),
       }))
-      .filter(article => article.topic);
+      .filter((article) => article.topic);
   },
 });
 
@@ -206,7 +154,7 @@ export const generateBriefForUser = internalAction({
       return;
     }
 
-    const oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+    const oneWeekAgo = Date.now() - TIME_CONSTANTS.ONE_WEEK;
     const articles = await ctx.runQuery(internal.briefs.getRecentArticlesForUser, {
       userId,
       since: oneWeekAgo,
@@ -234,14 +182,14 @@ export const generateBriefForUser = internalAction({
 
     for (const [topicName, topicArticles] of topicGroups) {
       const processedArticles = [];
-      
+
       for (const article of topicArticles.slice(0, 3)) {
         const targetLanguage = preferences.briefSchedule.translation.enabled
           ? preferences.briefSchedule.translation.language
           : undefined;
 
         const processedResult = await processArticleContent(article.url, targetLanguage);
-        
+
         if (processedResult.isOk()) {
           const processed = processedResult.value;
           processedArticles.push({
@@ -277,36 +225,25 @@ export const generateBriefForUser = internalAction({
   },
 });
 
-function formatBriefContent(content: BriefContent): string {
-  const date = new Date(content.generatedAt).toLocaleDateString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    timeZone: content.userTimezone,
-  });
+export const getNextBriefSchedule = internalQuery({
+  args: { userId: v.id('users') },
+  handler: async (ctx, { userId }) => {
+    const preferences = await ctx.db
+      .query('preferences')
+      .withIndex('by_user', (q) => q.eq('userId', userId))
+      .unique();
 
-  let brief = `# Your Weekly Brief - ${date}\n\n`;
-  brief += `Here's what's been happening in your followed topics:\n\n`;
-
-  for (const topic of content.topics) {
-    brief += `## ${topic.name}\n\n`;
-    
-    for (const article of topic.articles) {
-      brief += `### [${article.title}](${article.url})\n`;
-      brief += `${article.summary}\n`;
-      
-      if (article.translation) {
-        brief += `\n*Translation: ${article.translation}*\n`;
-      }
-      
-      brief += `\n---\n\n`;
+    if (!preferences) {
+      return null;
     }
-  }
 
-  brief += `\n*This brief was generated automatically based on your followed topics.*`;
-  return brief;
-}
+    return calculateNextBriefTime({
+      timezone: preferences.briefSchedule.timezone,
+      scheduledHour: preferences.briefSchedule.hour,
+      scheduledDayOfWeek: preferences.briefSchedule.dayOfWeek,
+    });
+  },
+});
 
 export const generateScheduledBriefs = internalAction({
   args: {},
@@ -320,7 +257,7 @@ export const generateScheduledBriefs = internalAction({
     for (let timezoneOffset = -12; timezoneOffset <= 14; timezoneOffset++) {
       const localHour = (currentHour + timezoneOffset + 24) % 24;
       const localDayOfWeek = currentDayOfWeek;
-      
+
       const users = await ctx.runQuery(internal.briefs.getUsersReadyForBrief, {
         dayOfWeek: localDayOfWeek,
         hour: localHour,

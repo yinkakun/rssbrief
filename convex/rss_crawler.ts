@@ -1,12 +1,11 @@
-import ky from 'ky';
 import pLimit from 'p-limit';
-import { v } from 'convex/values';
 import * as cheerio from 'cheerio';
-import { ok, err, Result, fromPromise, fromThrowable } from 'neverthrow';
+import { ok, err, Result, fromThrowable } from 'neverthrow';
 
 import { internal } from './_generated/api';
 import { safeParseRSS } from './rss_parser';
 import { internalAction } from './_generated/server';
+import { safeFetch, safeCreateURL, limitArray, delay, slugify, BATCH_CONFIG } from './utils';
 
 interface CategoryRss {
   name: string;
@@ -35,12 +34,12 @@ interface CrawlResult {
 }
 
 const CONFIG = {
-  BATCH_SIZE: 20,
+  BATCH_SIZE: BATCH_CONFIG.DEFAULT_SIZE,
   RETRY_ATTEMPTS: 2,
   REQUEST_TIMEOUT: 8000,
   MAX_BLOGS_PER_CATEGORY: 5,
   MAX_RSS_ITEMS_TO_PARSE: 5,
-  DELAY_BETWEEN_BATCHES: 100,
+  DELAY_BETWEEN_BATCHES: BATCH_CONFIG.DELAY_BETWEEN_BATCHES,
   MAX_CATEGORIES_TO_PROCESS: 50,
 } as const;
 
@@ -49,53 +48,13 @@ const CONCURRENCY_LIMIT = pLimit(100);
 const urlCache = new Map<string, string>();
 const contentCache = new Map<string, string>();
 
-const limitArray = <T>(arr: T[], maxSize: number): T[] => arr.slice(0, maxSize);
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-const slugify = (str: string): string =>
-  str
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .substring(0, 50);
-
 const safeParseHTML = fromThrowable(
   (htmlContent: string) => cheerio.load(htmlContent),
   (e) => ({ message: `HTML parse error: ${(e as Error).message}`, step: 'html-parse' }),
 );
 
-const safeCreateURL = fromThrowable(
-  (urlPath: string, baseUrl: string): string => {
-    const cacheKey = `${urlPath}|${baseUrl}`;
-    if (urlCache.has(cacheKey)) return urlCache.get(cacheKey)!;
-
-    const result = new URL(urlPath, baseUrl).toString();
-    urlCache.set(cacheKey, result);
-    return result;
-  },
-  (e) => ({ message: `URL creation error: ${(e as Error).message}`, step: 'url-creation' }),
-);
-
-const httpClient = ky.create({
-  retry: CONFIG.RETRY_ATTEMPTS,
-  timeout: CONFIG.REQUEST_TIMEOUT,
-  headers: {
-    'User-Agent': 'RSSBriefBot/1.0',
-  },
-});
-
 const fetchContent = (url: string, shouldCache = true) => {
-  if (shouldCache && contentCache.has(url)) {
-    return Promise.resolve(ok(contentCache.get(url)!));
-  }
-
-  return fromPromise(
-    httpClient(url)
-      .text()
-      .then((content) => (shouldCache ? (contentCache.set(url, content), content) : content)),
-    (e) => ({ message: `Fetch failed: ${(e as Error).message}`, step: 'fetch', url }),
-  );
+  return safeFetch(url, shouldCache, contentCache);
 };
 
 const parseRssFeedFromUrl = async (feedUrl: string): Promise<Result<string[], CrawlError>> => {

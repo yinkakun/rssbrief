@@ -23,6 +23,7 @@ import type * as rss_crawler from "../rss_crawler.js";
 import type * as rss_parser from "../rss_parser.js";
 import type * as saved_articles from "../saved_articles.js";
 import type * as topics from "../topics.js";
+import type * as utils from "../utils.js";
 
 /**
  * A utility for referencing Convex functions in your app's API.
@@ -43,6 +44,7 @@ declare const fullApi: ApiFromModules<{
   rss_parser: typeof rss_parser;
   saved_articles: typeof saved_articles;
   topics: typeof topics;
+  utils: typeof utils;
 }>;
 export declare const api: FilterApi<
   typeof fullApi,

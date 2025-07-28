@@ -1,9 +1,10 @@
 import { v } from 'convex/values';
-
-import { Id } from './_generated/dataModel';
-import { internal } from './_generated/api';
-import { internalQuery, internalMutation, MutationCtx, query, mutation } from './_generated/server';
 import { getAuthUserId } from '@convex-dev/auth/server';
+
+import { requireAuth } from './utils';
+import { internal } from './_generated/api';
+import { Id } from './_generated/dataModel';
+import { internalQuery, internalMutation, MutationCtx, query, mutation } from './_generated/server';
 
 export const getCuratedTopicByName = internalQuery({
   args: { name: v.string() },
@@ -128,10 +129,7 @@ export const getUserTopics = internalQuery({
 export const getUserTopicsPublic = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) {
-      throw new Error('Not authenticated');
-    }
+    const userId = requireAuth(await getAuthUserId(ctx));
 
     const userTopics = await ctx.db
       .query('topics')
@@ -149,7 +147,7 @@ export const getUserTopicsPublic = query({
           feeds.map(async (tf) => {
             const feed = await ctx.db.get(tf.feedId);
             return feed ? { id: feed._id, url: feed.url, title: feed.title } : null;
-          })
+          }),
         );
 
         return {
@@ -159,7 +157,7 @@ export const getUserTopicsPublic = query({
           createdAt: topic.createdAt,
           feeds: feedDetails.filter(Boolean),
         };
-      })
+      }),
     );
 
     return topicsWithFeeds;
@@ -172,10 +170,7 @@ export const createUserTopic = mutation({
     tags: v.optional(v.array(v.string())),
   },
   handler: async (ctx, { name, tags = [] }) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) {
-      throw new Error('Not authenticated');
-    }
+    const userId = requireAuth(await getAuthUserId(ctx));
 
     const existingTopic = await ctx.db
       .query('topics')
@@ -204,10 +199,7 @@ export const updateUserTopic = mutation({
     tags: v.optional(v.array(v.string())),
   },
   handler: async (ctx, { topicId, name, tags }) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) {
-      throw new Error('Not authenticated');
-    }
+    const userId = requireAuth(await getAuthUserId(ctx));
 
     const topic = await ctx.db.get(topicId);
     if (!topic || topic.userId !== userId) {
@@ -238,10 +230,7 @@ export const deleteUserTopic = mutation({
     topicId: v.id('topics'),
   },
   handler: async (ctx, { topicId }) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) {
-      throw new Error('Not authenticated');
-    }
+    const userId = requireAuth(await getAuthUserId(ctx));
 
     const topic = await ctx.db.get(topicId);
     if (!topic || topic.userId !== userId) {
@@ -269,10 +258,7 @@ export const addRSSUrlToTopic = mutation({
     feedTitle: v.optional(v.string()),
   },
   handler: async (ctx, { topicId, rssUrl, feedTitle }) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) {
-      throw new Error('Not authenticated');
-    }
+    const userId = requireAuth(await getAuthUserId(ctx));
 
     const topic = await ctx.db.get(topicId);
     if (!topic || topic.userId !== userId) {
@@ -322,10 +308,7 @@ export const removeRSSUrlFromTopic = mutation({
     feedId: v.id('feeds'),
   },
   handler: async (ctx, { topicId, feedId }) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) {
-      throw new Error('Not authenticated');
-    }
+    const userId = requireAuth(await getAuthUserId(ctx));
 
     const topic = await ctx.db.get(topicId);
     if (!topic || topic.userId !== userId) {
@@ -352,10 +335,7 @@ export const getTopicFeedsForUser = query({
     topicId: v.id('topics'),
   },
   handler: async (ctx, { topicId }) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) {
-      throw new Error('Not authenticated');
-    }
+    const userId = requireAuth(await getAuthUserId(ctx));
 
     const topic = await ctx.db.get(topicId);
     if (!topic || topic.userId !== userId) {
@@ -370,13 +350,15 @@ export const getTopicFeedsForUser = query({
     const feeds = await Promise.all(
       topicFeeds.map(async (tf) => {
         const feed = await ctx.db.get(tf.feedId);
-        return feed ? {
-          id: feed._id,
-          url: feed.url,
-          title: feed.title,
-          updatedAt: feed.updatedAt,
-        } : null;
-      })
+        return feed
+          ? {
+              id: feed._id,
+              url: feed.url,
+              title: feed.title,
+              updatedAt: feed.updatedAt,
+            }
+          : null;
+      }),
     );
 
     return feeds.filter(Boolean);
@@ -388,10 +370,7 @@ export const followTopic = mutation({
     topicId: v.id('topics'),
   },
   handler: async (ctx, { topicId }) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) {
-      throw new Error('Not authenticated');
-    }
+    const userId = requireAuth(await getAuthUserId(ctx));
 
     const topic = await ctx.db.get(topicId);
     if (!topic) {
@@ -435,10 +414,7 @@ export const unfollowTopic = mutation({
     topicId: v.id('topics'),
   },
   handler: async (ctx, { topicId }) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) {
-      throw new Error('Not authenticated');
-    }
+    const userId = requireAuth(await getAuthUserId(ctx));
 
     const topic = await ctx.db.get(topicId);
     if (!topic) {
@@ -465,10 +441,7 @@ export const isTopicFollowed = query({
     topicId: v.id('topics'),
   },
   handler: async (ctx, { topicId }) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) {
-      throw new Error('Not authenticated');
-    }
+    const userId = requireAuth(await getAuthUserId(ctx));
 
     const relation = await ctx.db
       .query('topicFeeds')
@@ -482,10 +455,7 @@ export const isTopicFollowed = query({
 export const getAllAvailableTopics = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) {
-      throw new Error('Not authenticated');
-    }
+    const userId = requireAuth(await getAuthUserId(ctx));
 
     const curatedTopics = await ctx.db
       .query('topics')
@@ -521,7 +491,7 @@ export const getAllAvailableTopics = query({
           isFollowed: isFollowed !== null,
           feedCount: feedCount.length,
         };
-      })
+      }),
     );
 
     return topicsWithFollowStatus.sort((a, b) => {

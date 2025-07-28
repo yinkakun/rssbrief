@@ -2,14 +2,12 @@ import { v } from 'convex/values';
 import { query, mutation } from './_generated/server';
 import { getAuthUserId } from '@convex-dev/auth/server';
 import { Doc } from './_generated/dataModel';
+import { DEFAULT_PREFERENCES, requireAuth } from './utils';
 
 export const getUserPreferences = query({
   args: {},
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) {
-      throw new Error('Not authenticated');
-    }
+  handler: async (ctx) => {
+    const userId = requireAuth(await getAuthUserId(ctx));
 
     const preferences = await ctx.db
       .query('preferences')
@@ -37,10 +35,7 @@ export const updateUserPreferences = mutation({
     ),
   },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) {
-      throw new Error('Not authenticated');
-    }
+    const userId = requireAuth(await getAuthUserId(ctx));
 
     const existingPreferences = await ctx.db
       .query('preferences')
@@ -61,14 +56,7 @@ export const updateUserPreferences = mutation({
         name: args.name || '',
         userId,
         onboarded: args.onboarded || false,
-        briefSchedule: args.briefSchedule || {
-          hour: 9,
-          dayOfWeek: 1,
-          timezone: 'UTC',
-          translation: {
-            enabled: false,
-          },
-        },
+        briefSchedule: args.briefSchedule || DEFAULT_PREFERENCES.briefSchedule,
       };
 
       return await ctx.db.insert('preferences', defaultPreferences);
@@ -79,10 +67,7 @@ export const updateUserPreferences = mutation({
 export const resetUserPreferences = mutation({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) {
-      throw new Error('Not authenticated');
-    }
+    const userId = requireAuth(await getAuthUserId(ctx));
 
     const existingPreferences = await ctx.db
       .query('preferences')
@@ -93,14 +78,7 @@ export const resetUserPreferences = mutation({
       const defaultPreferences = {
         name: '',
         onboarded: false,
-        briefSchedule: {
-          hour: 9,
-          dayOfWeek: 1,
-          timezone: 'UTC',
-          translation: {
-            enabled: false,
-          },
-        },
+        briefSchedule: DEFAULT_PREFERENCES.briefSchedule,
       };
 
       await ctx.db.patch(existingPreferences._id, defaultPreferences);
@@ -127,10 +105,7 @@ export const createUserPreferences = mutation({
     ),
   },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) {
-      throw new Error('Not authenticated');
-    }
+    const userId = requireAuth(await getAuthUserId(ctx));
 
     const existingPreferences = await ctx.db
       .query('preferences')
@@ -145,14 +120,7 @@ export const createUserPreferences = mutation({
       name: args.name,
       userId,
       onboarded: false,
-      briefSchedule: args.briefSchedule || {
-        hour: 9,
-        dayOfWeek: 1,
-        timezone: 'UTC',
-        translation: {
-          enabled: false,
-        },
-      },
+      briefSchedule: args.briefSchedule || DEFAULT_PREFERENCES.briefSchedule,
     };
 
     return await ctx.db.insert('preferences', preferences);
