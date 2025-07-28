@@ -382,3 +382,153 @@ export const getTopicFeedsForUser = query({
     return feeds.filter(Boolean);
   },
 });
+
+export const followTopic = mutation({
+  args: {
+    topicId: v.id('topics'),
+  },
+  handler: async (ctx, { topicId }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) {
+      throw new Error('Not authenticated');
+    }
+
+    const topic = await ctx.db.get(topicId);
+    if (!topic) {
+      throw new Error('Topic not found');
+    }
+
+    const topicFeeds = await ctx.db
+      .query('topicFeeds')
+      .withIndex('by_topic', (q) => q.eq('topicId', topicId))
+      .filter((q) => q.eq(q.field('userId'), null))
+      .collect();
+
+    if (topicFeeds.length === 0) {
+      throw new Error('No feeds found for this topic');
+    }
+
+    const relationIds = [];
+    for (const topicFeed of topicFeeds) {
+      const existingRelation = await ctx.db
+        .query('topicFeeds')
+        .withIndex('by_user_and_topic', (q) => q.eq('userId', userId).eq('topicId', topicId))
+        .filter((q) => q.eq(q.field('feedId'), topicFeed.feedId))
+        .first();
+
+      if (!existingRelation) {
+        const relationId = await ctx.db.insert('topicFeeds', {
+          topicId,
+          feedId: topicFeed.feedId,
+          userId,
+        });
+        relationIds.push(relationId);
+      }
+    }
+
+    return relationIds;
+  },
+});
+
+export const unfollowTopic = mutation({
+  args: {
+    topicId: v.id('topics'),
+  },
+  handler: async (ctx, { topicId }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) {
+      throw new Error('Not authenticated');
+    }
+
+    const topic = await ctx.db.get(topicId);
+    if (!topic) {
+      throw new Error('Topic not found');
+    }
+
+    const userTopicFeeds = await ctx.db
+      .query('topicFeeds')
+      .withIndex('by_user_and_topic', (q) => q.eq('userId', userId).eq('topicId', topicId))
+      .collect();
+
+    const deletedIds = [];
+    for (const relation of userTopicFeeds) {
+      await ctx.db.delete(relation._id);
+      deletedIds.push(relation._id);
+    }
+
+    return deletedIds;
+  },
+});
+
+export const isTopicFollowed = query({
+  args: {
+    topicId: v.id('topics'),
+  },
+  handler: async (ctx, { topicId }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) {
+      throw new Error('Not authenticated');
+    }
+
+    const relation = await ctx.db
+      .query('topicFeeds')
+      .withIndex('by_user_and_topic', (q) => q.eq('userId', userId).eq('topicId', topicId))
+      .first();
+
+    return relation !== null;
+  },
+});
+
+export const getAllAvailableTopics = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) {
+      throw new Error('Not authenticated');
+    }
+
+    const curatedTopics = await ctx.db
+      .query('topics')
+      .withIndex('by_user', (q) => q.eq('userId', null))
+      .collect();
+
+    const userTopics = await ctx.db
+      .query('topics')
+      .withIndex('by_user', (q) => q.eq('userId', userId))
+      .collect();
+
+    const allTopics = [...curatedTopics, ...userTopics];
+
+    const topicsWithFollowStatus = await Promise.all(
+      allTopics.map(async (topic) => {
+        const isFollowed = await ctx.db
+          .query('topicFeeds')
+          .withIndex('by_user_and_topic', (q) => q.eq('userId', userId).eq('topicId', topic._id))
+          .first();
+
+        const feedCount = await ctx.db
+          .query('topicFeeds')
+          .withIndex('by_topic', (q) => q.eq('topicId', topic._id))
+          .filter((q) => q.eq(q.field('userId'), null))
+          .collect();
+
+        return {
+          id: topic._id,
+          name: topic.name,
+          tags: topic.tags,
+          createdAt: topic.createdAt,
+          isUserTopic: topic.userId !== null,
+          isFollowed: isFollowed !== null,
+          feedCount: feedCount.length,
+        };
+      })
+    );
+
+    return topicsWithFollowStatus.sort((a, b) => {
+      if (a.isFollowed !== b.isFollowed) {
+        return a.isFollowed ? -1 : 1;
+      }
+      return b.createdAt - a.createdAt;
+    });
+  },
+});
