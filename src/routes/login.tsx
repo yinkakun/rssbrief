@@ -1,6 +1,4 @@
-import { OTPInput } from 'input-otp';
 import React from 'react';
-import { useConvexAuth } from 'convex/react';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { createFileRoute } from '@tanstack/react-router';
 export const Route = createFileRoute('/login')({

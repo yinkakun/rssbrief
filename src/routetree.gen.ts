@@ -10,18 +10,21 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
-import { Route as AppRouteImport } from './routes/_app'
+import { Route as AuthRouteImport } from './routes/_auth'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AppOnboardingRouteImport } from './routes/_app/onboarding'
-import { Route as AppHomeRouteImport } from './routes/_app/home'
+import { Route as AuthOnboardingRouteImport } from './routes/_auth/onboarding'
+import { Route as AuthAppRouteImport } from './routes/_auth/_app'
+import { Route as AuthAppSettingsRouteImport } from './routes/_auth/_app/settings'
+import { Route as AuthAppFeedsRouteImport } from './routes/_auth/_app/feeds'
+import { Route as AuthAppBriefsRouteImport } from './routes/_auth/_app/briefs'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppRoute = AppRouteImport.update({
-  id: '/_app',
+const AuthRoute = AuthRouteImport.update({
+  id: '/_auth',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -29,48 +32,78 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppOnboardingRoute = AppOnboardingRouteImport.update({
+const AuthOnboardingRoute = AuthOnboardingRouteImport.update({
   id: '/onboarding',
   path: '/onboarding',
-  getParentRoute: () => AppRoute,
+  getParentRoute: () => AuthRoute,
 } as any)
-const AppHomeRoute = AppHomeRouteImport.update({
-  id: '/home',
-  path: '/home',
-  getParentRoute: () => AppRoute,
+const AuthAppRoute = AuthAppRouteImport.update({
+  id: '/_app',
+  getParentRoute: () => AuthRoute,
+} as any)
+const AuthAppSettingsRoute = AuthAppSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AuthAppRoute,
+} as any)
+const AuthAppFeedsRoute = AuthAppFeedsRouteImport.update({
+  id: '/feeds',
+  path: '/feeds',
+  getParentRoute: () => AuthAppRoute,
+} as any)
+const AuthAppBriefsRoute = AuthAppBriefsRouteImport.update({
+  id: '/briefs',
+  path: '/briefs',
+  getParentRoute: () => AuthAppRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
-  '/home': typeof AppHomeRoute
-  '/onboarding': typeof AppOnboardingRoute
+  '/onboarding': typeof AuthOnboardingRoute
+  '/briefs': typeof AuthAppBriefsRoute
+  '/feeds': typeof AuthAppFeedsRoute
+  '/settings': typeof AuthAppSettingsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
-  '/home': typeof AppHomeRoute
-  '/onboarding': typeof AppOnboardingRoute
+  '/onboarding': typeof AuthOnboardingRoute
+  '/briefs': typeof AuthAppBriefsRoute
+  '/feeds': typeof AuthAppFeedsRoute
+  '/settings': typeof AuthAppSettingsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/_app': typeof AppRouteWithChildren
+  '/_auth': typeof AuthRouteWithChildren
   '/login': typeof LoginRoute
-  '/_app/home': typeof AppHomeRoute
-  '/_app/onboarding': typeof AppOnboardingRoute
+  '/_auth/_app': typeof AuthAppRouteWithChildren
+  '/_auth/onboarding': typeof AuthOnboardingRoute
+  '/_auth/_app/briefs': typeof AuthAppBriefsRoute
+  '/_auth/_app/feeds': typeof AuthAppFeedsRoute
+  '/_auth/_app/settings': typeof AuthAppSettingsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/login' | '/home' | '/onboarding'
+  fullPaths: '/' | '/login' | '/onboarding' | '/briefs' | '/feeds' | '/settings'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/login' | '/home' | '/onboarding'
-  id: '__root__' | '/' | '/_app' | '/login' | '/_app/home' | '/_app/onboarding'
+  to: '/' | '/login' | '/onboarding' | '/briefs' | '/feeds' | '/settings'
+  id:
+    | '__root__'
+    | '/'
+    | '/_auth'
+    | '/login'
+    | '/_auth/_app'
+    | '/_auth/onboarding'
+    | '/_auth/_app/briefs'
+    | '/_auth/_app/feeds'
+    | '/_auth/_app/settings'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AppRoute: typeof AppRouteWithChildren
+  AuthRoute: typeof AuthRouteWithChildren
   LoginRoute: typeof LoginRoute
 }
 
@@ -83,11 +116,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_app': {
-      id: '/_app'
+    '/_auth': {
+      id: '/_auth'
       path: ''
       fullPath: ''
-      preLoaderRoute: typeof AppRouteImport
+      preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -97,38 +130,74 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_app/onboarding': {
-      id: '/_app/onboarding'
+    '/_auth/onboarding': {
+      id: '/_auth/onboarding'
       path: '/onboarding'
       fullPath: '/onboarding'
-      preLoaderRoute: typeof AppOnboardingRouteImport
-      parentRoute: typeof AppRoute
+      preLoaderRoute: typeof AuthOnboardingRouteImport
+      parentRoute: typeof AuthRoute
     }
-    '/_app/home': {
-      id: '/_app/home'
-      path: '/home'
-      fullPath: '/home'
-      preLoaderRoute: typeof AppHomeRouteImport
-      parentRoute: typeof AppRoute
+    '/_auth/_app': {
+      id: '/_auth/_app'
+      path: ''
+      fullPath: ''
+      preLoaderRoute: typeof AuthAppRouteImport
+      parentRoute: typeof AuthRoute
+    }
+    '/_auth/_app/settings': {
+      id: '/_auth/_app/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AuthAppSettingsRouteImport
+      parentRoute: typeof AuthAppRoute
+    }
+    '/_auth/_app/feeds': {
+      id: '/_auth/_app/feeds'
+      path: '/feeds'
+      fullPath: '/feeds'
+      preLoaderRoute: typeof AuthAppFeedsRouteImport
+      parentRoute: typeof AuthAppRoute
+    }
+    '/_auth/_app/briefs': {
+      id: '/_auth/_app/briefs'
+      path: '/briefs'
+      fullPath: '/briefs'
+      preLoaderRoute: typeof AuthAppBriefsRouteImport
+      parentRoute: typeof AuthAppRoute
     }
   }
 }
 
-interface AppRouteChildren {
-  AppHomeRoute: typeof AppHomeRoute
-  AppOnboardingRoute: typeof AppOnboardingRoute
+interface AuthAppRouteChildren {
+  AuthAppBriefsRoute: typeof AuthAppBriefsRoute
+  AuthAppFeedsRoute: typeof AuthAppFeedsRoute
+  AuthAppSettingsRoute: typeof AuthAppSettingsRoute
 }
 
-const AppRouteChildren: AppRouteChildren = {
-  AppHomeRoute: AppHomeRoute,
-  AppOnboardingRoute: AppOnboardingRoute,
+const AuthAppRouteChildren: AuthAppRouteChildren = {
+  AuthAppBriefsRoute: AuthAppBriefsRoute,
+  AuthAppFeedsRoute: AuthAppFeedsRoute,
+  AuthAppSettingsRoute: AuthAppSettingsRoute,
 }
 
-const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
+const AuthAppRouteWithChildren =
+  AuthAppRoute._addFileChildren(AuthAppRouteChildren)
+
+interface AuthRouteChildren {
+  AuthAppRoute: typeof AuthAppRouteWithChildren
+  AuthOnboardingRoute: typeof AuthOnboardingRoute
+}
+
+const AuthRouteChildren: AuthRouteChildren = {
+  AuthAppRoute: AuthAppRouteWithChildren,
+  AuthOnboardingRoute: AuthOnboardingRoute,
+}
+
+const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AppRoute: AppRouteWithChildren,
+  AuthRoute: AuthRouteWithChildren,
   LoginRoute: LoginRoute,
 }
 export const routeTree = rootRouteImport
