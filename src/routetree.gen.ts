@@ -14,6 +14,7 @@ import { Route as AuthRouteImport } from './routes/_auth'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthOnboardingRouteImport } from './routes/_auth/onboarding'
 import { Route as AuthAppRouteImport } from './routes/_auth/_app'
+import { Route as AuthAppTopicsRouteImport } from './routes/_auth/_app/topics'
 import { Route as AuthAppSettingsRouteImport } from './routes/_auth/_app/settings'
 import { Route as AuthAppFeedsRouteImport } from './routes/_auth/_app/feeds'
 import { Route as AuthAppBriefsRouteImport } from './routes/_auth/_app/briefs'
@@ -41,6 +42,11 @@ const AuthAppRoute = AuthAppRouteImport.update({
   id: '/_app',
   getParentRoute: () => AuthRoute,
 } as any)
+const AuthAppTopicsRoute = AuthAppTopicsRouteImport.update({
+  id: '/topics',
+  path: '/topics',
+  getParentRoute: () => AuthAppRoute,
+} as any)
 const AuthAppSettingsRoute = AuthAppSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -64,6 +70,7 @@ export interface FileRoutesByFullPath {
   '/briefs': typeof AuthAppBriefsRoute
   '/feeds': typeof AuthAppFeedsRoute
   '/settings': typeof AuthAppSettingsRoute
+  '/topics': typeof AuthAppTopicsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -72,6 +79,7 @@ export interface FileRoutesByTo {
   '/briefs': typeof AuthAppBriefsRoute
   '/feeds': typeof AuthAppFeedsRoute
   '/settings': typeof AuthAppSettingsRoute
+  '/topics': typeof AuthAppTopicsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -83,12 +91,27 @@ export interface FileRoutesById {
   '/_auth/_app/briefs': typeof AuthAppBriefsRoute
   '/_auth/_app/feeds': typeof AuthAppFeedsRoute
   '/_auth/_app/settings': typeof AuthAppSettingsRoute
+  '/_auth/_app/topics': typeof AuthAppTopicsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/login' | '/onboarding' | '/briefs' | '/feeds' | '/settings'
+  fullPaths:
+    | '/'
+    | '/login'
+    | '/onboarding'
+    | '/briefs'
+    | '/feeds'
+    | '/settings'
+    | '/topics'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/login' | '/onboarding' | '/briefs' | '/feeds' | '/settings'
+  to:
+    | '/'
+    | '/login'
+    | '/onboarding'
+    | '/briefs'
+    | '/feeds'
+    | '/settings'
+    | '/topics'
   id:
     | '__root__'
     | '/'
@@ -99,6 +122,7 @@ export interface FileRouteTypes {
     | '/_auth/_app/briefs'
     | '/_auth/_app/feeds'
     | '/_auth/_app/settings'
+    | '/_auth/_app/topics'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -144,6 +168,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthAppRouteImport
       parentRoute: typeof AuthRoute
     }
+    '/_auth/_app/topics': {
+      id: '/_auth/_app/topics'
+      path: '/topics'
+      fullPath: '/topics'
+      preLoaderRoute: typeof AuthAppTopicsRouteImport
+      parentRoute: typeof AuthAppRoute
+    }
     '/_auth/_app/settings': {
       id: '/_auth/_app/settings'
       path: '/settings'
@@ -172,12 +203,14 @@ interface AuthAppRouteChildren {
   AuthAppBriefsRoute: typeof AuthAppBriefsRoute
   AuthAppFeedsRoute: typeof AuthAppFeedsRoute
   AuthAppSettingsRoute: typeof AuthAppSettingsRoute
+  AuthAppTopicsRoute: typeof AuthAppTopicsRoute
 }
 
 const AuthAppRouteChildren: AuthAppRouteChildren = {
   AuthAppBriefsRoute: AuthAppBriefsRoute,
   AuthAppFeedsRoute: AuthAppFeedsRoute,
   AuthAppSettingsRoute: AuthAppSettingsRoute,
+  AuthAppTopicsRoute: AuthAppTopicsRoute,
 }
 
 const AuthAppRouteWithChildren =
