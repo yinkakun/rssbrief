@@ -4,6 +4,28 @@ import { getAuthUserId } from '@convex-dev/auth/server';
 import { Doc } from './_generated/dataModel';
 import { DEFAULT_PREFERENCES, requireAuth } from './utils';
 
+export const getCurrentUser = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return null;
+
+    const user = await ctx.db.get(userId);
+    if (!user) return null;
+
+    const preferences = await ctx.db
+      .query('preferences')
+      .withIndex('by_user', (q) => q.eq('userId', userId))
+      .first();
+
+    return {
+      id: user._id,
+      email: user.email,
+      onboarded: preferences?.onboarded || false,
+    };
+  },
+});
+
 export const getUserPreferences = query({
   args: {},
   handler: async (ctx) => {
@@ -124,26 +146,5 @@ export const createUserPreferences = mutation({
     };
 
     return await ctx.db.insert('preferences', preferences);
-  },
-});
-
-export const getCurrentUser = query({
-  args: {},
-  handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) return null;
-
-    const user = await ctx.db.get(userId);
-    if (!user) return null;
-
-    const preferences = await ctx.db
-      .query('preferences')
-      .withIndex('by_user', (q) => q.eq('userId', userId))
-      .first();
-
-    return {
-      ...user,
-      preferences: preferences || DEFAULT_PREFERENCES,
-    };
   },
 });

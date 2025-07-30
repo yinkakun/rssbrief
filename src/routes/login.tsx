@@ -1,11 +1,15 @@
 import React from 'react';
 import { z } from 'zod/v4';
-import { useMutation } from '@tanstack/react-query';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, Controller } from 'react-hook-form';
 import { atom, useSetAtom, useAtomValue } from 'jotai';
+
+import { useMutation } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 
+import { api } from 'convex/_generated/api';
+import { useQuery } from '@tanstack/react-query';
+import { convexQuery } from '@convex-dev/react-query';
 import { useAuthActions } from '@convex-dev/auth/react';
 
 import { Input } from '@/ui/input';
@@ -92,7 +96,7 @@ const EmailForm = () => {
         </div>
 
         <Button type="submit" className="w-full" formNoValidate disabled={requestCodeMutation.isPending}>
-          {requestCodeMutation.isPending ? <Spinner /> : 'Send OTP'}
+          {requestCodeMutation.isPending ? <Spinner /> : 'Send Code'}
         </Button>
       </form>
     </LoginStepWrapper>
@@ -111,6 +115,8 @@ const VerifyCode = () => {
     },
   });
 
+  const getUserQuery = useQuery({ ...convexQuery(api.users.getCurrentUser, {}), enabled: false });
+
   const verifyCodeMutation = useMutation({
     mutationFn: async ({ code }: OtpForm) => {
       const formData = new FormData();
@@ -127,17 +133,20 @@ const VerifyCode = () => {
   const onSubmit = (data: OtpForm) => {
     verifyCodeMutation.mutate(data, {
       onSuccess: () => {
-        // todo use convex query to check if user is onboarded
-        const onboarded = true;
-        if (onboarded) {
-          navigate({
-            to: '/feeds',
-          });
-        } else {
-          navigate({
-            to: '/onboarding',
-          });
-        }
+        getUserQuery.refetch().then((result) => {
+          if (result.data) {
+            const { onboarded } = result.data;
+            if (onboarded) {
+              navigate({
+                to: '/feeds',
+              });
+            } else {
+              navigate({
+                to: '/onboarding',
+              });
+            }
+          }
+        });
       },
     });
   };
@@ -168,8 +177,13 @@ const VerifyCode = () => {
             <span className="text-xs text-red-500">{form.formState.errors.code.message}</span>
           )}
 
-          <Button type="submit" className="w-full" formNoValidate disabled={verifyCodeMutation.isPending}>
-            {verifyCodeMutation.isPending ? <Spinner /> : 'Verify OTP'}
+          <Button
+            type="submit"
+            formNoValidate
+            className="w-full"
+            disabled={verifyCodeMutation.isPending || getUserQuery.isFetching}
+          >
+            {verifyCodeMutation.isPending || getUserQuery.isFetching ? <Spinner /> : 'Verify Code'}
           </Button>
         </div>
       </form>
@@ -185,9 +199,7 @@ const LoginStepWrapper = ({ children }: LoginStepWrapperProps) => {
   return (
     <div className="flex max-w-sm min-w-sm flex-col items-center gap-4 rounded-3xl border border-neutral-300 bg-white p-8 text-center">
       <p className="max-w-[70%] text-center text-neutral-700">🗞️ RSSBrief</p>
-
       {children}
-
       <span className="max-w-[90%] text-xs text-neutral-600">Powered by Convex and Resend</span>
     </div>
   );
