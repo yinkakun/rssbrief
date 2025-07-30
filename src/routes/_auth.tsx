@@ -1,4 +1,5 @@
 import React from 'react';
+import { ThreeDotsScale } from 'react-svg-spinners';
 import { useConvexAuth } from '@convex-dev/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useNavigate, Outlet } from '@tanstack/react-router';
@@ -18,7 +19,11 @@ function RouteComponent() {
   }, [isAuthenticated, isLoading, navigate]);
 
   if (isLoading) {
-    return <div>loading</div>;
+    return (
+      <div className="flex h-dvh items-center justify-center bg-white text-neutral-500">
+        <ThreeDotsScale width={50} height={50} color="#f54100" />
+      </div>
+    );
   }
 
   return <Outlet />;
