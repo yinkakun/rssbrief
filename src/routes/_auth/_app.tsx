@@ -6,11 +6,14 @@ import { type RegisteredRouter, Outlet, Link } from '@tanstack/react-router';
 import { VscMapVertical, VscVersions, VscRss } from 'react-icons/vsc';
 import { PiGearFine, PiSidebarSimple, PiCellTower } from 'react-icons/pi';
 
+// todo schedule, follow top topics, summary style,
+
 export const Route = createFileRoute('/_auth/_app')({
   component: RouteComponent,
 });
 
 function RouteComponent() {
+  // fetch current user here, redirect to onboarding if not onboarded
   return (
     <div className="flex h-[100dvh] bg-[#F8F8F8]">
       <div className="h-full basis-[18rem] p-6">
