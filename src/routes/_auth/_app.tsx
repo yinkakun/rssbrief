@@ -16,9 +16,9 @@ function RouteComponent() {
   // fetch current user here, redirect to onboarding if not onboarded
   return (
     <div className="flex h-[100dvh] bg-[#F8F8F8]">
-      <div className="h-full basis-[18rem] p-6">
-        <aside className="flex h-full w-full flex-col rounded-xl border border-neutral-300">
-          <div className="flex items-center justify-between gap-2 border-b border-neutral-300 px-4 py-3">
+      <div className="h-full basis-[20rem] p-6">
+        <aside className="flex h-full w-full flex-col rounded-xl border border-neutral-200 bg-white">
+          <div className="flex items-center justify-between gap-2 border-b border-neutral-200 px-4 py-3">
             <div className="flex items-center gap-1">
               <VscRss size={24} />
               <span>RSS Brief</span>
@@ -49,7 +49,7 @@ function RouteComponent() {
           </nav>
         </aside>
       </div>
-      <div className="flex-1 overflow-y-auto p-2">
+      <div className="flex-1 overflow-y-auto py-6">
         <Outlet />
       </div>
     </div>
