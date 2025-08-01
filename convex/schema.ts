@@ -1,6 +1,6 @@
 import { v } from 'convex/values';
-import { defineSchema, defineTable } from 'convex/server';
 import { authTables } from '@convex-dev/auth/server';
+import { defineSchema, defineTable } from 'convex/server';
 
 export default defineSchema({
   ...authTables,
@@ -9,18 +9,24 @@ export default defineSchema({
     name: v.string(),
     userId: v.id('users'),
     onboarded: v.boolean(),
-    briefSchedule: v.object({
-      hour: v.number(), // 0-23
-      dayOfWeek: v.number(), // 0-6 (Sunday-Saturday)
-      timezone: v.string(),
-      translation: v.object({
-        enabled: v.boolean(),
-        language: v.optional(v.string()),
+    translation: v.object({
+      enabled: v.boolean(),
+      language: v.optional(v.string()),
+    }),
+    brief: v.object({
+      style: v.union(v.literal('concise'), v.literal('detailed')),
+      schedule: v.object({
+        hour: v.number(), // 0-23
+        timezone: v.string(), // IANA tmz
+        dayOfWeek: v.number(), // 0-6 (0 = Sunday)
       }),
+    }),
+    notifications: v.object({
+      email: v.boolean(),
     }),
   })
     .index('by_user', ['userId'])
-    .index('by_brief_schedule', ['briefSchedule.dayOfWeek', 'briefSchedule.hour']),
+    .index('by_user_and_name', ['userId', 'name']),
 
   topics: defineTable({
     name: v.string(),
@@ -67,14 +73,4 @@ export default defineSchema({
   })
     .index('by_user', ['userId'])
     .index('by_user_and_status', ['userId', 'status']),
-
-  savedArticles: defineTable({
-    savedAt: v.number(),
-    userId: v.id('users'),
-    articleId: v.id('articles'),
-  })
-    .index('by_user', ['userId'])
-    .index('by_article', ['articleId'])
-    .index('by_user_and_saved_at', ['userId', 'savedAt'])
-    .index('by_user_and_article', ['userId', 'articleId']),
 });
