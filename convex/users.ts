@@ -69,7 +69,7 @@ export const updateUserPreferences = mutation({
 
       if (args.name !== undefined) updatedFields.name = args.name;
       if (args.onboarded !== undefined) updatedFields.onboarded = args.onboarded;
-      if (args.briefSchedule !== undefined) updatedFields.briefSchedule = args.briefSchedule;
+      // if (args.briefSchedule !== undefined) updatedFields.briefSchedule = args.briefSchedule;
 
       await ctx.db.patch(existingPreferences._id, updatedFields);
       return existingPreferences._id;
@@ -81,7 +81,7 @@ export const updateUserPreferences = mutation({
         briefSchedule: args.briefSchedule || DEFAULT_PREFERENCES.briefSchedule,
       };
 
-      return await ctx.db.insert('preferences', defaultPreferences);
+      // return await ctx.db.insert('preferences', defaultPreferences);
     }
   },
 });
@@ -145,6 +145,6 @@ export const createUserPreferences = mutation({
       briefSchedule: args.briefSchedule || DEFAULT_PREFERENCES.briefSchedule,
     };
 
-    return await ctx.db.insert('preferences', preferences);
+    // return await ctx.db.insert('preferences', preferences);
   },
 });

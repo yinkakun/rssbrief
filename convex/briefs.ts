@@ -74,7 +74,7 @@ export const getUsersReadyForBrief = internalQuery({
   handler: async (ctx, { dayOfWeek, hour }) => {
     return await ctx.db
       .query('preferences')
-      .withIndex('by_brief_schedule', (q) => q.eq('briefSchedule.dayOfWeek', dayOfWeek).eq('briefSchedule.hour', hour))
+      // .withIndex('by_brief_schedule', (q) => q.eq('briefSchedule.dayOfWeek', dayOfWeek).eq('briefSchedule.hour', hour))
       .collect();
   },
 });
@@ -177,15 +177,15 @@ export const generateBriefForUser = internalAction({
     const briefContent: BriefContent = {
       topics: [],
       generatedAt: Date.now(),
-      userTimezone: preferences.briefSchedule.timezone,
+      userTimezone: preferences.brief.schedule.timezone,
     };
 
     for (const [topicName, topicArticles] of topicGroups) {
       const processedArticles = [];
 
       for (const article of topicArticles.slice(0, 3)) {
-        const targetLanguage = preferences.briefSchedule.translation.enabled
-          ? preferences.briefSchedule.translation.language
+        const targetLanguage = preferences.brief.translation.enabled
+          ? preferences.brief.translation.language
           : undefined;
 
         const processedResult = await processArticleContent(article.url, targetLanguage);
@@ -238,9 +238,9 @@ export const getNextBriefSchedule = internalQuery({
     }
 
     return calculateNextBriefTime({
-      timezone: preferences.briefSchedule.timezone,
-      scheduledHour: preferences.briefSchedule.hour,
-      scheduledDayOfWeek: preferences.briefSchedule.dayOfWeek,
+      timezone: preferences.brief.schedule.timezone,
+      scheduledHour: preferences.brief.schedule.hour,
+      scheduledDayOfWeek: preferences.brief.schedule.dayOfWeek,
     });
   },
 });

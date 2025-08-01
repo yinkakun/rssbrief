@@ -9,16 +9,17 @@ export default defineSchema({
     name: v.string(),
     userId: v.id('users'),
     onboarded: v.boolean(),
-    translation: v.object({
-      enabled: v.boolean(),
-      language: v.optional(v.string()),
-    }),
+
     brief: v.object({
       style: v.union(v.literal('concise'), v.literal('detailed')),
       schedule: v.object({
         hour: v.number(), // 0-23
         timezone: v.string(), // IANA tmz
         dayOfWeek: v.number(), // 0-6 (0 = Sunday)
+      }),
+      translation: v.object({
+        enabled: v.boolean(),
+        language: v.optional(v.string()),
       }),
     }),
     notifications: v.object({
