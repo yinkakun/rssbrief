@@ -3,8 +3,8 @@ import { createFileRoute } from '@tanstack/react-router';
 import { type IconType } from 'react-icons';
 import { type RegisteredRouter, Outlet, Link } from '@tanstack/react-router';
 
-import { VscMapVertical, VscVersions, VscRss } from 'react-icons/vsc';
-import { PiGearFine, PiSidebarSimple, PiCellTower } from 'react-icons/pi';
+import { PiGearFine } from 'react-icons/pi';
+import { VscMapVertical, VscVersions, VscSymbolNumeric } from 'react-icons/vsc';
 
 // todo schedule, follow top topics, summary style,
 
@@ -16,40 +16,56 @@ function RouteComponent() {
   // fetch current user here, redirect to onboarding if not onboarded
   return (
     <div className="flex h-[100dvh] bg-[#F8F8F8]">
-      <div className="h-full basis-[20rem] p-6">
-        <aside className="flex h-full w-full flex-col rounded-xl border border-neutral-200 bg-white">
-          <div className="flex items-center justify-between gap-2 border-b border-neutral-200 px-4 py-3">
-            <div className="flex items-center gap-1">
-              <VscRss size={24} />
-              <span>RSS Brief</span>
-            </div>
-
-            <button className="flex items-center justify-center rounded-lg p-1 hover:bg-neutral-200">
-              <PiSidebarSimple size={20} />
-            </button>
+      <div className="basis-[20rem] p-6">
+        <aside className="flex h-full w-full flex-col rounded-2xl border border-black/5 bg-white backdrop-blur-lg">
+          <div className="flex items-center gap-2 pt-3 pl-4">
+            <p className="text-lg text-black">RSSBrief</p>
           </div>
-
-          <nav className="flex flex-col gap-2 p-3 py-4">
+          <nav className="flex flex-col gap-2 p-3 py-3">
             {navItems.map((item) => {
               const Icon = item.icon;
               return (
                 <Link
-                  key={item.path}
                   to={item.path}
-                  className="flex items-center gap-2 rounded-lg border border-transparent px-2 py-1.5 hover:border-neutral-300 hover:bg-neutral-100"
+                  key={item.path}
+                  className="flex items-center gap-2 rounded-lg border border-transparent px-2 py-1.5 text-sm text-slate-900 duration-200 hover:bg-slate-50"
                   activeProps={{
-                    className: 'border-neutral-300! bg-neutral-100 text-neutral-900',
+                    className: 'border-slate-200/50! bg-slate-50 text-slate-700',
                   }}
                 >
-                  <Icon size={20} />
+                  <Icon size={20} className="text-black" />
                   <span>{item.label}</span>
                 </Link>
               );
             })}
           </nav>
+
+          {/* Convert to Favourites */}
+          <nav className="flex flex-col gap-3 p-3">
+            <div className="flex flex-col gap-2 px-3">
+              {TOPICS_FOLLOWED.map((topic, index) => (
+                <div key={index} className="flex items-center gap-2 text-sm">
+                  <div className="size-2 rounded-full bg-black"></div>
+                  <span className="text-sm text-black/70">{topic.title}</span>
+                </div>
+              ))}
+            </div>
+          </nav>
+
+          <div className="m-3 mt-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+            Powered by Convex and Resend. Open source on{' '}
+            <a
+              href="https://github.com/rssbrief/rssbrief"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:underline"
+            >
+              GitHub
+            </a>
+          </div>
         </aside>
       </div>
-      <div className="flex-1 overflow-y-auto py-6">
+      <div className="flex-1 overflow-y-auto px-6 py-6">
         <Outlet />
       </div>
     </div>
@@ -65,8 +81,10 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { label: 'Feeds', path: '/feeds', icon: PiCellTower },
   { label: 'Briefs', path: '/briefs', icon: VscVersions },
-  { label: 'Topics', path: '/topics', icon: VscMapVertical },
+  { label: 'Feeds', path: '/feeds', icon: VscMapVertical },
+  { label: 'Topics', path: '/topics', icon: VscSymbolNumeric },
   { label: 'Settings', path: '/settings', icon: PiGearFine },
 ];
+
+const TOPICS_FOLLOWED = [{ title: 'Arts' }, { title: 'Technology' }, { title: 'Science' }];
