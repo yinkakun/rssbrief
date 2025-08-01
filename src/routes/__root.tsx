@@ -1,4 +1,7 @@
 import '@/styles.css';
+import '@fontsource/inter/400.css';
+import '@fontsource/inter/500.css';
+
 import * as React from 'react';
 import { QueryClient } from '@tanstack/react-query';
 import { Outlet, Scripts, HeadContent, createRootRouteWithContext } from '@tanstack/react-router';
