@@ -17,7 +17,7 @@ function RouteComponent() {
   return (
     <div className="flex h-[100dvh] bg-[#F8F8F8]">
       <div className="basis-[20rem] p-6">
-        <aside className="flex h-full w-full flex-col rounded-2xl border border-black/5 bg-white backdrop-blur-lg">
+        <aside className="flex h-full w-full flex-col rounded-3xl border border-black/5 bg-white backdrop-blur-lg">
           <div className="flex items-center gap-2 pt-3 pl-4">
             <p className="text-lg text-black">RSSBrief</p>
           </div>
@@ -52,7 +52,7 @@ function RouteComponent() {
             </div>
           </nav>
 
-          <div className="m-3 mt-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+          <div className="m-3 mt-auto rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
             Powered by Convex and Resend. Open source on{' '}
             <a
               href="https://github.com/rssbrief/rssbrief"

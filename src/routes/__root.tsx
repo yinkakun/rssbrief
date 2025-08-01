@@ -3,6 +3,7 @@ import '@fontsource/inter/400.css';
 import '@fontsource/inter/500.css';
 
 import * as React from 'react';
+import { Toaster } from '@/ui/toaster';
 import { QueryClient } from '@tanstack/react-query';
 import { Outlet, Scripts, HeadContent, createRootRouteWithContext } from '@tanstack/react-router';
 
@@ -41,6 +42,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         {children}
+        <Toaster />
         <Scripts />
       </body>
     </html>

@@ -71,11 +71,7 @@ export function SheetContent({
 
 export function SheetTitle({ className, ...props }: React.ComponentProps<typeof SheetPrimitive.Title>) {
   return (
-    <SheetPrimitive.Title
-      data-slot="sheet-title"
-      className={cn('font-semibold text-slate-600', className)}
-      {...props}
-    />
+    <SheetPrimitive.Title data-slot="sheet-title" className={cn('font-medi text-slate-600', className)} {...props} />
   );
 }
 
