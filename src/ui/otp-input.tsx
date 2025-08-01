@@ -30,7 +30,7 @@ export function OtpInputSlot({ index, className, ...props }: OtpInputSlotProps) 
       data-slot="input-otp-slot"
       data-active={isActive}
       className={cn(
-        'relative flex h-9 w-9 items-center justify-center border-y border-r border-neutral-300 text-sm transition-all outline-none first:rounded-l-md first:border-l last:rounded-r-md aria-invalid:border-red-500 data-[active=true]:z-10 data-[active=true]:bg-neutral-100 data-[active=true]:aria-invalid:border-red-500',
+        'relative flex h-9 w-9 items-center justify-center border-y border-r border-slate-300 text-sm transition-all outline-none first:rounded-l-md first:border-l last:rounded-r-md aria-invalid:border-red-500 data-[active=true]:z-10 data-[active=true]:bg-slate-100 data-[active=true]:aria-invalid:border-red-500',
         className,
       )}
       {...props}
@@ -38,7 +38,7 @@ export function OtpInputSlot({ index, className, ...props }: OtpInputSlotProps) 
       {char}
       {hasFakeCaret && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className="animate-caret-blink h-4 w-px bg-neutral-800 duration-1000" />
+          <div className="animate-caret-blink h-4 w-px bg-slate-800 duration-1000" />
         </div>
       )}
     </div>

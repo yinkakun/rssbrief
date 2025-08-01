@@ -46,7 +46,7 @@ export function SheetContent({
       <SheetPrimitive.Content
         data-slot="sheet-content"
         className={cn(
-          'data-[state=open]:animate-in data-[state=closed]:animate-out fixed z-50 flex flex-col gap-4 bg-neutral-50 shadow-lg transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500',
+          'data-[state=open]:animate-in data-[state=closed]:animate-out fixed z-50 flex flex-col gap-4 bg-slate-50 shadow-lg transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500',
           side === 'right' &&
             'data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right inset-y-0 right-0 h-full w-3/4 border-l sm:max-w-sm',
           side === 'left' &&
@@ -60,7 +60,7 @@ export function SheetContent({
         {...props}
       >
         {children}
-        <SheetPrimitive.Close className="focus:ring-ring absolute top-4 right-4 rounded-xs opacity-70 ring-offset-neutral-50 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-neutral-100">
+        <SheetPrimitive.Close className="focus:ring-ring absolute top-4 right-4 rounded-xs opacity-70 ring-offset-slate-50 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-slate-100">
           <VscClose className="h-5 w-5" />
           <span className="sr-only">Close</span>
         </SheetPrimitive.Close>
@@ -73,7 +73,7 @@ export function SheetTitle({ className, ...props }: React.ComponentProps<typeof 
   return (
     <SheetPrimitive.Title
       data-slot="sheet-title"
-      className={cn('font-semibold text-neutral-600', className)}
+      className={cn('font-semibold text-slate-600', className)}
       {...props}
     />
   );
@@ -83,7 +83,7 @@ export function SheetDescription({ className, ...props }: React.ComponentProps<t
   return (
     <SheetPrimitive.Description
       data-slot="sheet-description"
-      className={cn('text-sm text-neutral-400', className)}
+      className={cn('text-sm text-slate-400', className)}
       {...props}
     />
   );
