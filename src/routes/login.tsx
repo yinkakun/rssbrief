@@ -37,7 +37,7 @@ export const Route = createFileRoute('/login')({
 
 function RouteComponent() {
   return (
-    <div className="flex min-h-[100dvh] flex-col items-center justify-center bg-neutral-50">
+    <div className="flex min-h-[100dvh] flex-col items-center justify-center bg-slate-50">
       <div>
         <Stepper>
           <EmailForm />
@@ -155,7 +155,7 @@ const VerifyCode = () => {
     <LoginStepWrapper>
       <form onSubmit={form.handleSubmit(onSubmit)} className="w-full">
         <div className="flex w-full flex-col items-center gap-4">
-          <span className="text-xs text-neutral-600">Enter the 6-digit code sent to {email}</span>
+          <span className="text-xs text-slate-600">Enter the 6-digit code sent to {email}</span>
           <Controller
             name="code"
             control={form.control}
@@ -197,10 +197,10 @@ interface LoginStepWrapperProps {
 
 const LoginStepWrapper = ({ children }: LoginStepWrapperProps) => {
   return (
-    <div className="flex max-w-sm min-w-sm flex-col items-center gap-4 rounded-3xl border border-neutral-300 bg-white p-8 text-center">
-      <p className="max-w-[70%] text-center text-neutral-700">🗞️ RSSBrief</p>
+    <div className="flex max-w-sm min-w-sm flex-col items-center gap-4 rounded-3xl border border-black/50 bg-white p-8 text-center">
+      <p className="max-w-[70%] text-center text-slate-700">Login to RSSBrief</p>
       {children}
-      <span className="max-w-[90%] text-xs text-neutral-600">Powered by Convex and Resend</span>
+      <span className="max-w-[90%] text-xs text-slate-600">Powered by Convex and Resend</span>
     </div>
   );
 };
