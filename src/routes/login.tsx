@@ -4,6 +4,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, Controller } from 'react-hook-form';
 import { atom, useSetAtom, useAtomValue } from 'jotai';
 
+import { toast } from '@/ui/toaster';
+
 import { useMutation } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 
@@ -71,7 +73,9 @@ const EmailForm = () => {
     },
     onError: (error) => {
       console.error('Failed to send code:', error);
-      //  todo: add toast notifications
+      toast({
+        title: 'Failed to send code',
+      });
     },
   });
 
@@ -126,7 +130,9 @@ const VerifyCode = () => {
     },
     onError: (error) => {
       console.error('Failed to verify code:', error);
-      // todo: add toast notification
+      toast({
+        title: 'Verification Failed',
+      });
     },
   });
 
@@ -138,7 +144,7 @@ const VerifyCode = () => {
             const { onboarded } = result.data;
             if (onboarded) {
               navigate({
-                to: '/feeds',
+                to: '/briefs',
               });
             } else {
               navigate({
@@ -200,7 +206,27 @@ const LoginStepWrapper = ({ children }: LoginStepWrapperProps) => {
     <div className="flex max-w-sm min-w-sm flex-col items-center gap-4 rounded-3xl border border-black/5 bg-white px-8 py-4 text-center">
       <p className="max-w-[70%] text-center text-xl text-slate-950">Login to RSSBrief</p>
       {children}
-      <span className="max-w-[90%] text-xs text-slate-600">Powered by Convex and Resend</span>
+
+      <span className="max-w-[90%] text-xs text-slate-600">
+        Powered by{' '}
+        <a
+          href="https://convex.dev"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-600 hover:text-blue-800 hover:underline"
+        >
+          Convex
+        </a>{' '}
+        and{' '}
+        <a
+          href="https://resend.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-600 hover:text-blue-800 hover:underline"
+        >
+          Resend
+        </a>
+      </span>
     </div>
   );
 };
