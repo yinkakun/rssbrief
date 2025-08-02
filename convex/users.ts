@@ -1,8 +1,10 @@
 import { v } from 'convex/values';
 import { query, mutation } from './_generated/server';
 import { getAuthUserId } from '@convex-dev/auth/server';
-import { Doc } from './_generated/dataModel';
-import { DEFAULT_PREFERENCES, requireAuth } from './utils';
+import { requireAuth } from './utils';
+import { ConvexError } from 'convex/values';
+import { api } from './_generated/api';
+import { internal } from './_generated/api';
 
 export const getCurrentUser = query({
   args: {},
@@ -22,37 +24,33 @@ export const getCurrentUser = query({
       id: user._id,
       email: user.email,
       onboarded: preferences?.onboarded || false,
+      preferences: {
+        name: preferences?.name || '',
+        notifications: preferences?.notifications,
+        briefSchedule: preferences?.brief?.schedule,
+      },
     };
-  },
-});
-
-export const getUserPreferences = query({
-  args: {},
-  handler: async (ctx) => {
-    const userId = requireAuth(await getAuthUserId(ctx));
-
-    const preferences = await ctx.db
-      .query('preferences')
-      .withIndex('by_user', (q) => q.eq('userId', userId))
-      .first();
-
-    return preferences;
   },
 });
 
 export const updateUserPreferences = mutation({
   args: {
     name: v.optional(v.string()),
-    onboarded: v.optional(v.boolean()),
-    briefSchedule: v.optional(
+    brief: v.optional(
       v.object({
-        hour: v.number(),
-        dayOfWeek: v.number(),
-        timezone: v.string(),
-        translation: v.object({
-          enabled: v.boolean(),
-          language: v.optional(v.string()),
-        }),
+        style: v.optional(v.union(v.literal('concise'), v.literal('detailed'))),
+        schedule: v.optional(
+          v.object({
+            hour: v.optional(v.number()), // 0-23
+            timezone: v.optional(v.string()), // IANA timezone
+            dayOfWeek: v.optional(v.number()), // 0-6 (0 = Sunday)
+          }),
+        ),
+      }),
+    ),
+    notifications: v.optional(
+      v.object({
+        email: v.optional(v.boolean()),
       }),
     ),
   },
@@ -64,67 +62,43 @@ export const updateUserPreferences = mutation({
       .withIndex('by_user', (q) => q.eq('userId', userId))
       .first();
 
-    if (existingPreferences) {
-      const updatedFields: Partial<Doc<'preferences'>> = {};
-
-      if (args.name !== undefined) updatedFields.name = args.name;
-      if (args.onboarded !== undefined) updatedFields.onboarded = args.onboarded;
-      // if (args.briefSchedule !== undefined) updatedFields.briefSchedule = args.briefSchedule;
-
-      await ctx.db.patch(existingPreferences._id, updatedFields);
-      return existingPreferences._id;
-    } else {
-      const defaultPreferences = {
-        name: args.name || '',
-        userId,
-        onboarded: args.onboarded || false,
-        briefSchedule: args.briefSchedule || DEFAULT_PREFERENCES.briefSchedule,
-      };
-
-      // return await ctx.db.insert('preferences', defaultPreferences);
+    if (!existingPreferences) {
+      throw new Error('User preferences not found');
     }
+
+    await ctx.db.patch(existingPreferences._id, {
+      ...(args.name !== undefined && { name: args.name }),
+      ...(args.brief && {
+        brief: {
+          style: args.brief.style ?? existingPreferences.brief.style,
+          schedule: {
+            hour: args.brief.schedule?.hour ?? existingPreferences.brief.schedule.hour,
+            timezone: args.brief.schedule?.timezone ?? existingPreferences.brief.schedule.timezone,
+            dayOfWeek: args.brief.schedule?.dayOfWeek ?? existingPreferences.brief.schedule.dayOfWeek,
+          },
+        },
+      }),
+      ...(args.notifications && {
+        notifications: {
+          email: args.notifications.email ?? existingPreferences.notifications.email,
+        },
+      }),
+    });
   },
 });
 
-export const resetUserPreferences = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const userId = requireAuth(await getAuthUserId(ctx));
-
-    const existingPreferences = await ctx.db
-      .query('preferences')
-      .withIndex('by_user', (q) => q.eq('userId', userId))
-      .first();
-
-    if (existingPreferences) {
-      const defaultPreferences = {
-        name: '',
-        onboarded: false,
-        briefSchedule: DEFAULT_PREFERENCES.briefSchedule,
-      };
-
-      await ctx.db.patch(existingPreferences._id, defaultPreferences);
-      return existingPreferences._id;
-    }
-
-    return null;
-  },
-});
-
-export const createUserPreferences = mutation({
+export const onboardUser = mutation({
   args: {
     name: v.string(),
-    briefSchedule: v.optional(
-      v.object({
-        hour: v.number(),
-        dayOfWeek: v.number(),
-        timezone: v.string(),
-        translation: v.object({
-          enabled: v.boolean(),
-          language: v.optional(v.string()),
-        }),
+    brief: v.object({
+      style: v.union(v.literal('concise'), v.literal('detailed')),
+      schedule: v.object({
+        hour: v.number(), // 0-23
+        timezone: v.string(), // IANA timezone
+        dayOfWeek: v.number(), // 0-6 (0 = Sunday)
       }),
-    ),
+    }),
+    topicsToFollow: v.array(v.id('topics')),
   },
   handler: async (ctx, args) => {
     const userId = requireAuth(await getAuthUserId(ctx));
@@ -134,17 +108,31 @@ export const createUserPreferences = mutation({
       .withIndex('by_user', (q) => q.eq('userId', userId))
       .first();
 
-    if (existingPreferences) {
-      throw new Error('User preferences already exist');
+    if (!existingPreferences) {
+      throw new ConvexError('User preferences not found');
     }
 
-    const preferences = {
-      name: args.name,
-      userId,
-      onboarded: false,
-      briefSchedule: args.briefSchedule || DEFAULT_PREFERENCES.briefSchedule,
-    };
+    if (existingPreferences.onboarded) {
+      throw new ConvexError('User is already onboarded');
+    }
 
-    // return await ctx.db.insert('preferences', preferences);
+    await ctx.db.patch(existingPreferences._id, {
+      name: args.name,
+      onboarded: true,
+      brief: args.brief,
+      notifications: {
+        email: true,
+      },
+    });
+
+    for (const topicId of args.topicsToFollow) {
+      ctx.runMutation(api.topics.followTopic, {
+        topicId,
+      });
+    }
+
+    await ctx.scheduler.runAfter(0, internal.briefs.generateBriefForUser, {
+      userId,
+    });
   },
 });

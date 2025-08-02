@@ -114,17 +114,6 @@ const formatDateForBrief = (timestamp: number, timezone: string): string => {
   });
 };
 
-export const DEFAULT_PREFERENCES = {
-  briefSchedule: {
-    hour: 9, // 9 AM
-    dayOfWeek: 0, // Sunday
-    timezone: 'UTC',
-    translation: {
-      enabled: false,
-    },
-  },
-} as const;
-
 export interface BriefTopic {
   name: string;
   articles: Array<{
