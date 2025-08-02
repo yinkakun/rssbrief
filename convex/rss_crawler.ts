@@ -341,8 +341,8 @@ export const triggerRssCrawler = internalAction({
       return err(result.error);
     }
 
-    const topics = Object.entries(result.value).map(([name, data]) => ({
-      name,
+    const topics = Object.entries(result.value).map(([_key, data]) => ({
+      name: data.name,
       tags: data.pathSegments,
       rssUrls: data.blogRssLinks,
     }));
