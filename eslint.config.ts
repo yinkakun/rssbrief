@@ -27,6 +27,7 @@ export default tseslint.config(
       ...hooksPlugin.configs.recommended.rules,
       ...reactPlugin.configs['jsx-runtime'].rules,
       '@typescript-eslint/no-unused-vars': 'off',
+      '@typescript-eslint/no-floating-promises': 'warn',
     },
     languageOptions: {
       globals: {
