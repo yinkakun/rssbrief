@@ -1,7 +1,10 @@
-import { createFileRoute } from '@tanstack/react-router';
+import { Input } from '@/ui/input';
 import { Button } from '@/ui/button';
 import { VscAdd } from 'react-icons/vsc';
-import { PiArrowUpRight, PiDotsSixVertical, PiDotsThreeVertical } from 'react-icons/pi';
+import { PiDotsThreeVertical, PiPlus, PiX } from 'react-icons/pi';
+import { createFileRoute } from '@tanstack/react-router';
+import { Dialog, DialogContent, DialogClose, DialogTrigger, DialogTitle } from '@/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/ui/dropdown-menu';
 
 export const Route = createFileRoute('/_auth/_app/topics')({
   component: RouteComponent,
@@ -14,10 +17,37 @@ function RouteComponent() {
         <h1 className="text-2xl text-slate-950">Topics</h1>
 
         <div className="w-fit">
-          <Button variant="outline">
-            <VscAdd className="mr-2" />
-            Create New Topic
-          </Button>
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="outline">
+                <VscAdd className="mr-2" />
+                Create New Topic
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl">
+              <DialogTitle>Create New Topic</DialogTitle>
+              <div className="xborder flex flex-col gap-4 rounded-2xl border-slate-200 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm text-slate-500">Url</span>
+                  <Input type="text" placeholder="Enter topic title" className="flex-1" />
+                  <button className="flex size-9 items-center justify-center rounded-lg bg-slate-50 outline-0 transition-colors hover:bg-slate-100">
+                    <PiX className="text-slate-500" size={20} />
+                  </button>
+                </div>
+
+                <Button variant="secondary" size="sm">
+                  <PiPlus />
+                  <span>Add more</span>
+                </Button>
+              </div>
+              <div className="mt-6 grid grid-cols-2 gap-4">
+                <DialogClose asChild>
+                  <Button variant="outline">Cancel</Button>
+                </DialogClose>
+                <Button type="submit">Create</Button>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
@@ -35,9 +65,21 @@ function RouteComponent() {
                       <h3 className="text-lg leading-none text-black">{topic.title}</h3>
                     </div>
 
-                    <div className="flex items-center rounded-lg bg-black/3 p-1 hover:bg-black/5">
-                      <PiDotsThreeVertical size={24} className="text-slate-700" />
-                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button className="flex items-center rounded-lg bg-black/3 p-1 outline-0 hover:bg-black/5">
+                          <PiDotsThreeVertical size={24} className="text-slate-700" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="w-48">
+                        <DropdownMenuItem className="cursor-pointer" onClick={() => alert('Edit Topic')}>
+                          Edit Topic
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer" onClick={() => alert('Delete Topic')}>
+                          Delete Topic
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
 

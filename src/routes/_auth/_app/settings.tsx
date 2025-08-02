@@ -6,6 +6,8 @@ import { Button } from '@/ui/button';
 import { RadioGroup, RadioGroupItem } from '@/ui/radio';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/ui/select';
 
+import { toast } from '@/ui/toaster';
+
 export const Route = createFileRoute('/_auth/_app/settings')({
   component: RouteComponent,
 });
@@ -95,7 +97,13 @@ const AccountSettings = () => {
       </div>
 
       <div className="flex w-full items-center justify-end border-t border-slate-100 p-4">
-        <Button variant="outline" className="ml-auto w-full max-w-[100px]">
+        <Button
+          variant="outline"
+          className="ml-auto w-full max-w-[100px]"
+          onClick={() => {
+            toast({ title: 'Settings saved successfully!' });
+          }}
+        >
           Save
         </Button>
       </div>
