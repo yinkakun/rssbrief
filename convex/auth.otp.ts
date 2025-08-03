@@ -5,7 +5,7 @@ import { Email } from '@convex-dev/auth/providers/Email';
 export const OTP = Email({
   id: 'otp',
   apiKey: process.env.RESEND_API_KEY,
-  maxAge: 60 * 15, // 15 minutes, TODO: Replace with EffectTS Duration
+  maxAge: 60 * 15, // 15 minutes
   generateVerificationToken: () => generateRandomString(6, '0123456789'),
   sendVerificationRequest: async ({ identifier: email, provider, token }) => {
     const resend = new ResendClient(provider.apiKey);
@@ -15,9 +15,6 @@ export const OTP = Email({
       from: 'RSSBrief <onboarding@resend.dev>',
       subject: `Your verification code`,
     });
-
-    console.log('Sent OTP to', email);
-    console.log('OTP', token);
 
     if (error) {
       throw new Error(JSON.stringify(error));

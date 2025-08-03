@@ -8,92 +8,13 @@ import { Doc, Id } from './_generated/dataModel';
 import { TIME_CONSTANTS, requireAuth } from './utils';
 import { query, internalQuery, internalMutation, internalAction } from './_generated/server';
 
-export const getLatestArticles = query({
-  args: { limit: v.optional(v.number()), topicId: v.optional(v.id('topics')) },
-  handler: async (ctx, { limit = 40, topicId }) => {
-    const userId: Id<'users'> = requireAuth(await getAuthUserId(ctx));
-    let userTopicsQuery = ctx.db.query('topicFeeds').withIndex('by_user', (q) => q.eq('userId', userId));
-    if (topicId) {
-      userTopicsQuery = userTopicsQuery.filter((q) => q.eq(q.field('topicId'), topicId));
-    }
-
-    const userTopics = await userTopicsQuery.collect();
-
-    if (userTopics.length === 0) {
-      return [];
-    }
-
-    const feedIds = userTopics.map((t) => t.feedId);
-    const articlesPerFeed = Math.max(1, Math.ceil(limit / feedIds.length));
-    const allArticlePromises = feedIds.map((feedId) =>
-      ctx.db
-        .query('articles')
-        .withIndex('by_feed', (q) => q.eq('feedId', feedId))
-        .order('desc')
-        .take(articlesPerFeed),
-    );
-    const resolvedArticlePromises = await Promise.all(allArticlePromises);
-
-    const articles = resolvedArticlePromises
-      .flat()
-      .sort((a, b) => b.publishedAt - a.publishedAt)
-      .slice(0, limit);
-
-    const feedMap = new Map<Id<'feeds'>, Doc<'feeds'>>();
-    const topicMap = new Map<Id<'topics'>, Doc<'topics'>>();
-    const feedToTopicMap = new Map<Id<'feeds'>, Id<'topics'>>();
-
-    userTopics.forEach((ut) => {
-      feedToTopicMap.set(ut.feedId, ut.topicId);
-    });
-
-    const uniqueFeedIds = [...new Set(articles.map((a) => a.feedId))];
-    const uniqueTopicIds = [...new Set(userTopics.map((ut) => ut.topicId))];
-
-    const [feeds, topics] = await Promise.all([
-      Promise.all(uniqueFeedIds.map((id) => ctx.db.get(id))),
-      Promise.all(uniqueTopicIds.map((id) => ctx.db.get(id))),
-    ]);
-
-    feeds.forEach((feed) => {
-      if (feed) feedMap.set(feed._id, feed);
-    });
-
-    topics.forEach((topic) => {
-      if (topic) topicMap.set(topic._id, topic);
-    });
-
-    const detailedArticles = articles.map((article) => {
-      const feed = feedMap.get(article.feedId);
-      const topicId = feedToTopicMap.get(article.feedId);
-      const topic = topicId ? topicMap.get(topicId) : null;
-
-      return {
-        ...article,
-        feed: feed
-          ? {
-              url: feed.url,
-              title: feed.title,
-            }
-          : null,
-        topic: topic
-          ? {
-              id: topic._id,
-              name: topic.name,
-              tags: topic.tags,
-            }
-          : null,
-      };
-    });
-
-    return detailedArticles;
-  },
-});
-
-export const getTopicFeeds = internalQuery({
-  args: {},
-  handler: async (ctx) => {
-    return await ctx.db.query('topicFeeds').collect();
+export const getUserTopicFeeds = internalQuery({
+  args: { userId: v.id('users') },
+  handler: async (ctx, { userId }) => {
+    return await ctx.db
+      .query('topicFeeds')
+      .withIndex('by_user', (q) => q.eq('userId', userId))
+      .collect();
   },
 });
 
@@ -104,26 +25,24 @@ export const getFeedById = internalQuery({
   },
 });
 
-export const getExistingArticleByUrl = internalQuery({
+export const getExistingFeedItemByUrl = internalQuery({
   args: { url: v.string() },
   handler: async (ctx, { url }) => {
     return await ctx.db
-      .query('articles')
+      .query('feedItems')
       .withIndex('by_url', (q) => q.eq('url', url))
       .first();
   },
 });
 
-export const insertArticle = internalMutation({
+export const insertFeedItem = internalMutation({
   args: {
-    publishedAt: v.number(),
     url: v.string(),
     feedId: v.id('feeds'),
-    title: v.string(),
-    content: v.string(),
+    publishedAt: v.number(),
   },
   handler: async (ctx, args) => {
-    return await ctx.db.insert('articles', args);
+    return await ctx.db.insert('feedItems', args);
   },
 });
 
@@ -137,62 +56,49 @@ export const updateFeedTimestamp = internalMutation({
   },
 });
 
-export const updateAllFeeds = internalAction({
-  args: {},
-  handler: async (ctx) => {
+export const updateUserFeeds = internalAction({
+  args: { userId: v.id('users') },
+  handler: async (ctx, { userId }) => {
     const now = Date.now();
-    const sevenDaysAgo = now - TIME_CONSTANTS.ONE_WEEK;
+    const initialCutOffDay = now - TIME_CONSTANTS.ONE_WEEK;
+    const userTopicFeeds = await ctx.runQuery(internal.feeds.getUserTopicFeeds, { userId });
 
-    const topicFeeds = await ctx.runQuery(internal.feeds.getTopicFeeds);
-    const feedFollowCounts = new Map<Id<'feeds'>, number>();
+    const userFeeds = userTopicFeeds;
 
-    for (const topicFeed of topicFeeds) {
-      if (topicFeed.userId) {
-        const count = feedFollowCounts.get(topicFeed.feedId) || 0;
-        feedFollowCounts.set(topicFeed.feedId, count + 1);
-      }
-    }
-
-    const feedsWithFollows = Array.from(feedFollowCounts.keys());
-    if (feedsWithFollows.length === 0) {
-      console.log('No feeds with user follows found');
+    if (userFeeds.length === 0) {
+      console.log(`No feeds found for user: ${userId}`);
       return;
     }
 
-    const feeds = await Promise.all(
-      feedsWithFollows.map((feedId) => ctx.runQuery(internal.feeds.getFeedById, { feedId })),
-    );
+    const feedIds = userFeeds.map((tf) => tf.feedId);
+    const feeds = await Promise.all(feedIds.map((feedId) => ctx.runQuery(internal.feeds.getFeedById, { feedId })));
 
-    const validFeeds = feeds.filter(Boolean) as Doc<'feeds'>[];
+    const validFeeds = feeds.filter((feed) => feed !== null && feed.url);
 
-    validFeeds.sort((a, b) => {
-      const aFollows = feedFollowCounts.get(a._id) || 0;
-      const bFollows = feedFollowCounts.get(b._id) || 0;
-      if (aFollows !== bFollows) return bFollows - aFollows;
-      return (a.updatedAt || 0) - (b.updatedAt || 0);
-    });
-
-    console.log(`Processing ${validFeeds.length} feeds with follows`);
+    console.log(`Processing ${validFeeds.length} feeds for user: ${userId}`);
 
     for (const feed of validFeeds) {
-      console.log(`Processing feed: ${feed.title} (${feed.url})`);
+      if (!feed?.url) {
+        console.warn(`Feed URL is missing for feed ID: ${feed?._id}`);
+        continue;
+      }
 
-      const rssResult = await safeParseRSS(feed.url);
+      const rssResult = await safeParseRSS(feed?.url);
       if (rssResult.isErr()) {
-        console.error(`Failed to parse RSS for ${feed.url}:`, rssResult.error);
+        console.warn(`Failed to parse RSS for ${feed.url}:`, rssResult.error);
         continue;
       }
 
       const { items } = rssResult.value;
       if (!items || items.length === 0) {
-        console.log(`No items found for feed: ${feed.url}`);
+        console.warn(`No items found for feed: ${feed.url}`);
         continue;
       }
 
       const isFirstFetch = !feed.updatedAt;
-      const cutoffDate = isFirstFetch ? sevenDaysAgo : feed.updatedAt;
+      const cutoffDate = isFirstFetch ? initialCutOffDay : feed.updatedAt;
 
-      const newArticles = [];
+      const newFeedItems = [];
       for (const item of items) {
         if (!item.link) continue;
 
@@ -204,66 +110,31 @@ export const updateAllFeeds = internalAction({
 
         if (publishedAt < (cutoffDate || 0)) continue;
 
-        const existing = await ctx.runQuery(internal.feeds.getExistingArticleByUrl, {
+        const existingFeedItem = await ctx.runQuery(internal.feeds.getExistingFeedItemByUrl, {
           url: item.link,
         });
 
-        if (existing) {
-          console.log(`Article already exists: ${item.link}`);
+        if (existingFeedItem) {
           continue;
         }
 
-        const contentResult = await fromPromise(
-          fetch(`https://r.jina.ai/${encodeURIComponent(item.link)}`, {
-            headers: { accept: 'application/json' },
-            signal: AbortSignal.timeout(10000),
-          }),
-          (error) => ({ message: `Fetch failed: ${error}`, step: 'fetch', url: item.link }),
-        );
-
-        if (contentResult.isErr()) {
-          console.error(`Error fetching content for ${item.link}:`, contentResult.error);
-          continue;
-        }
-
-        const response = contentResult.value;
-        if (!response.ok) {
-          console.error(`Content extraction failed for ${item.link}: ${response.status}`);
-          continue;
-        }
-
-        const dataResult = await fromPromise(
-          response.json() as Promise<{ data: { title: string; content: string } }>,
-          (error) => ({ message: `JSON parse failed: ${error}`, step: 'json-parse', url: item.link }),
-        );
-
-        if (dataResult.isErr()) {
-          console.error(`Error parsing JSON for ${item.link}:`, dataResult.error);
-          continue;
-        }
-
-        const data = dataResult.value;
-        newArticles.push({
+        newFeedItems.push({
           publishedAt,
           url: item.link,
           feedId: feed._id,
-          title: data.data.title || 'Untitled',
-          content: data.data.content || '',
         });
       }
 
-      for (const article of newArticles) {
-        await ctx.runMutation(internal.feeds.insertArticle, article);
+      for (const feedItem of newFeedItems) {
+        await ctx.runMutation(internal.feeds.insertFeedItem, feedItem);
       }
 
       await ctx.runMutation(internal.feeds.updateFeedTimestamp, {
         feedId: feed._id,
         updatedAt: now,
       });
-
-      console.log(`Added ${newArticles.length} new articles for feed: ${feed.title}`);
     }
 
-    console.log('Feed update completed');
+    console.log(`Feed update completed for user: ${userId}`);
   },
 });

@@ -17,17 +17,14 @@ export default defineSchema({
         timezone: v.string(), // IANA tmz
         dayOfWeek: v.number(), // 0-6 (0 = Sunday)
       }),
-      translation: v.object({
-        enabled: v.boolean(),
-        language: v.optional(v.string()),
-      }),
     }),
     notifications: v.object({
       email: v.boolean(),
     }),
   })
     .index('by_user', ['userId'])
-    .index('by_user_and_name', ['userId', 'name']),
+    .index('by_user_and_name', ['userId', 'name'])
+    .index('by_brief_schedule', ['brief.schedule.hour', 'brief.schedule.dayOfWeek']),
 
   topics: defineTable({
     name: v.string(),
@@ -40,7 +37,6 @@ export default defineSchema({
 
   feeds: defineTable({
     url: v.string(),
-    title: v.string(),
     updatedAt: v.optional(v.number()),
   }).index('by_url', ['url']),
 
@@ -55,10 +51,8 @@ export default defineSchema({
     .index('by_user_and_topic', ['userId', 'topicId'])
     .index('by_topic_and_feed', ['topicId', 'feedId']),
 
-  articles: defineTable({
+  feedItems: defineTable({
     url: v.string(),
-    title: v.string(),
-    content: v.string(),
     feedId: v.id('feeds'),
     publishedAt: v.number(),
   })
@@ -66,12 +60,14 @@ export default defineSchema({
     .index('by_feed', ['feedId'])
     .index('by_feed_and_published', ['feedId', 'publishedAt']),
 
-  briefs: defineTable({
+  briefItems: defineTable({
     userId: v.id('users'),
-    content: v.string(),
-    sentAt: v.optional(v.number()),
-    status: v.union(v.literal('pending'), v.literal('sent'), v.literal('failed')),
+    feedItemId: v.id('feedItems'),
+    title: v.string(),
+    summary: v.string(),
+    url: v.string(),
   })
+    .index('by_feedItem', ['feedItemId'])
     .index('by_user', ['userId'])
-    .index('by_user_and_status', ['userId', 'status']),
+    .index('by_user_and_feedItem', ['userId', 'feedItemId']),
 });

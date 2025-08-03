@@ -5,6 +5,10 @@ import { requireAuth } from './utils';
 import { ConvexError } from 'convex/values';
 import { api } from './_generated/api';
 import { internal } from './_generated/api';
+import { MutationCtx, QueryCtx } from './_generated/server';
+import { Id, Doc } from './_generated/dataModel';
+import { WithOptionalSystemFields } from 'convex/server';
+import { internalQuery } from './_generated/server';
 
 export const getCurrentUser = query({
   args: {},
@@ -33,6 +37,41 @@ export const getCurrentUser = query({
   },
 });
 
+export const getUserPreferences = (ctx: QueryCtx, userId: Id<'users'>) => {
+  return ctx.db
+    .query('preferences')
+    .withIndex('by_user', (q) => q.eq('userId', userId))
+    .unique();
+};
+
+export const getOrCreateUserPreferences = async (ctx: MutationCtx, userId: Id<'users'>) => {
+  const existingPreferences = await ctx.db
+    .query('preferences')
+    .withIndex('by_user', (q) => q.eq('userId', userId))
+    .first();
+  if (existingPreferences) return existingPreferences;
+
+  const defaultPreferences: WithOptionalSystemFields<Doc<'preferences'>> = {
+    userId,
+    name: '',
+    onboarded: false,
+    brief: {
+      schedule: {
+        hour: 9, // Default to 9 AM
+        dayOfWeek: 0, // Default to Sunday
+        timezone: 'UTC',
+      },
+      style: 'concise',
+    },
+    notifications: {
+      email: true,
+    },
+  };
+
+  const newPreferenceId = await ctx.db.insert('preferences', defaultPreferences);
+  return await ctx.db.get(newPreferenceId);
+};
+
 export const updateUserPreferences = mutation({
   args: {
     name: v.optional(v.string()),
@@ -56,11 +95,7 @@ export const updateUserPreferences = mutation({
   },
   handler: async (ctx, args) => {
     const userId = requireAuth(await getAuthUserId(ctx));
-
-    const existingPreferences = await ctx.db
-      .query('preferences')
-      .withIndex('by_user', (q) => q.eq('userId', userId))
-      .first();
+    const existingPreferences = await getOrCreateUserPreferences(ctx, userId);
 
     if (!existingPreferences) {
       throw new Error('User preferences not found');
@@ -102,11 +137,7 @@ export const onboardUser = mutation({
   },
   handler: async (ctx, args) => {
     const userId = requireAuth(await getAuthUserId(ctx));
-
-    const existingPreferences = await ctx.db
-      .query('preferences')
-      .withIndex('by_user', (q) => q.eq('userId', userId))
-      .first();
+    const existingPreferences = await getOrCreateUserPreferences(ctx, userId);
 
     if (!existingPreferences) {
       throw new ConvexError('User preferences not found');
@@ -131,8 +162,10 @@ export const onboardUser = mutation({
       });
     }
 
-    await ctx.scheduler.runAfter(0, internal.briefs.generateBriefForUser, {
+    await ctx.scheduler.runAfter(0, internal.feeds.updateUserFeeds, {
       userId,
     });
+
+    return existingPreferences._id;
   },
 });

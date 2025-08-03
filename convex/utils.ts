@@ -2,6 +2,8 @@ import ky from 'ky';
 import { generateText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { ok, fromPromise, fromThrowable } from 'neverthrow';
+import { format } from 'date-fns';
+import { toZonedTime } from 'date-fns-tz';
 import { Id } from './_generated/dataModel';
 
 export interface ProcessingError {
@@ -89,6 +91,7 @@ export const TIME_CONSTANTS = {
   ONE_HOUR: 60 * 60 * 1000,
   ONE_DAY: 24 * 60 * 60 * 1000,
   ONE_WEEK: 7 * 24 * 60 * 60 * 1000,
+  ONE_MONTH: 30 * 24 * 60 * 60 * 1000,
 } as const;
 
 export const limitArray = <T>(arr: T[], maxSize: number): T[] => arr.slice(0, maxSize);
@@ -105,13 +108,8 @@ export const slugify = (str: string): string =>
 export const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const formatDateForBrief = (timestamp: number, timezone: string): string => {
-  return new Date(timestamp).toLocaleDateString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    timeZone: timezone,
-  });
+  const zonedDate = toZonedTime(new Date(timestamp), timezone);
+  return format(zonedDate, 'EEEE, MMMM d, yyyy');
 };
 
 export interface BriefTopic {
@@ -153,44 +151,6 @@ export const formatBriefContent = (content: BriefContent): string => {
 
   brief += `\n*This brief was generated automatically based on your followed topics.*`;
   return brief;
-};
-
-interface calculateNextBriefTimeOpts {
-  now?: Date;
-  timezone: string;
-  scheduledHour: number;
-  scheduledDayOfWeek: number;
-}
-
-export const calculateNextBriefTime = (opts: calculateNextBriefTimeOpts) => {
-  const { now = new Date(), scheduledHour, timezone, scheduledDayOfWeek } = opts;
-
-  const currentTimeInUserTz = new Date(now.toLocaleString('en-US', { timeZone: timezone }));
-  const currentDayOfWeek = currentTimeInUserTz.getDay();
-  const currentHour = currentTimeInUserTz.getHours();
-
-  const nextBriefDate = new Date(currentTimeInUserTz);
-  nextBriefDate.setHours(scheduledHour, 0, 0, 0);
-
-  const daysUntilScheduled = (scheduledDayOfWeek - currentDayOfWeek + 7) % 7;
-
-  if (daysUntilScheduled === 0) {
-    if (currentHour >= scheduledHour) {
-      nextBriefDate.setDate(nextBriefDate.getDate() + 7);
-    }
-  } else {
-    nextBriefDate.setDate(nextBriefDate.getDate() + daysUntilScheduled);
-  }
-
-  const utcNextBrief = new Date(nextBriefDate.toLocaleString('en-US', { timeZone: 'UTC' }));
-
-  return {
-    nextBriefAt: utcNextBrief.getTime(),
-    dayOfWeek: scheduledDayOfWeek,
-    hour: scheduledHour,
-    timezone: timezone,
-    timeUntilNext: utcNextBrief.getTime() - now.getTime(),
-  };
 };
 
 export const requireAuth = (userId: Id<'users'> | null) => {

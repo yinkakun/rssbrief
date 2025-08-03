@@ -1,279 +1,243 @@
 import { v } from 'convex/values';
 import { ok, err, Result } from 'neverthrow';
-
-import { Id } from './_generated/dataModel';
+import { ConvexError } from 'convex/values';
+import { getAuthUserId } from '@convex-dev/auth/server';
 import { internal } from './_generated/api';
-import { internalQuery, internalMutation, internalAction } from './_generated/server';
-import {
-  BriefContent,
-  TIME_CONSTANTS,
-  safeGenerateText,
-  ProcessingError,
-  formatBriefContent,
-  safeExtractContent,
-  calculateNextBriefTime,
-} from './utils';
+import { requireAuth } from './utils';
+import { internalQuery, internalMutation, internalAction, query } from './_generated/server';
+import { getUserPreferences } from './users';
+import { Doc } from './_generated/dataModel';
+import { toZonedTime, fromZonedTime } from 'date-fns-tz';
+import pLimit from 'p-limit';
 
-interface ArticleResult {
-  url: string;
-  title: string;
-  content: string;
-  summary: string;
-  translations: Array<{
-    text: string;
-    language: string;
-  }>;
+import { TIME_CONSTANTS, safeGenerateText, ProcessingError, safeExtractContent } from './utils';
+
+function getNextScheduledTime({ dayOfWeek, hour, timezone }: { hour: number; dayOfWeek: number; timezone: string }) {
+  const nowInTimezone = toZonedTime(new Date(), timezone);
+
+  const currentDay = nowInTimezone.getDay();
+  let daysUntilTarget = (dayOfWeek - currentDay + 7) % 7;
+
+  if (daysUntilTarget === 0) {
+    const currentHour = nowInTimezone.getHours();
+    if (currentHour >= hour) {
+      daysUntilTarget = 7;
+    }
+  }
+
+  const targetDate = new Date(nowInTimezone);
+  targetDate.setDate(targetDate.getDate() + daysUntilTarget);
+  targetDate.setHours(hour, 0, 0, 0);
+
+  return fromZonedTime(targetDate, timezone).toISOString();
 }
 
-const processArticleContent = async (
-  url: string,
-  targetLanguage?: string,
-): Promise<Result<ArticleResult, ProcessingError>> => {
+export const getNextBriefSchedule = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = requireAuth(await getAuthUserId(ctx));
+    const userPreferences = await getUserPreferences(ctx, userId);
+
+    if (!userPreferences) {
+      return null;
+    }
+
+    return getNextScheduledTime({
+      timezone: userPreferences.brief.schedule.timezone,
+      hour: userPreferences.brief.schedule.hour,
+      dayOfWeek: userPreferences.brief.schedule.dayOfWeek,
+    });
+  },
+});
+
+interface ProcessedFeedItem {
+  url: string;
+  title: string;
+  summary: string;
+}
+
+const processFeedItem = async (url: string): Promise<Result<ProcessedFeedItem, ProcessingError>> => {
   const extractContentResult = await safeExtractContent(url);
   if (extractContentResult.isErr()) return err(extractContentResult.error);
 
   const extractedContent = extractContentResult.value.data;
 
   const summaryResult = await safeGenerateText(
-    `Provide a concise 2-sentence summary of this article:\n\n${extractedContent.content}`,
+    `Provide a concise 2-sentence summary of this:\n\n${extractedContent.content}`,
   );
   if (summaryResult.isErr()) return err(summaryResult.error);
 
-  const translations: Array<{ text: string; language: string }> = [];
-
-  if (targetLanguage && targetLanguage !== 'en') {
-    const translationResult = await safeGenerateText(
-      `Translate this summary to ${targetLanguage}, maintaining tone and meaning:\n\n${summaryResult.value}`,
-    );
-    if (translationResult.isOk()) {
-      translations.push({ text: translationResult.value, language: targetLanguage });
-    }
-  }
-
   return ok({
     url,
-    title: extractedContent.title,
-    content: extractedContent.content,
     summary: summaryResult.value,
-    translations,
+    title: extractedContent.title,
   });
 };
 
-export const getUserPreferences = internalQuery({
-  args: { userId: v.id('users') },
-  handler: async (ctx, { userId }) => {
-    return await ctx.db
-      .query('preferences')
-      .withIndex('by_user', (q) => q.eq('userId', userId))
-      .unique();
+export const getUserFeedItems = internalQuery({
+  args: {
+    since: v.number(),
+    userId: v.id('users'),
   },
-});
-
-export const getUsersReadyForBrief = internalQuery({
-  args: { dayOfWeek: v.number(), hour: v.number() },
-  handler: async (ctx, { dayOfWeek, hour }) => {
-    return await ctx.db
-      .query('preferences')
-      // .withIndex('by_brief_schedule', (q) => q.eq('briefSchedule.dayOfWeek', dayOfWeek).eq('briefSchedule.hour', hour))
-      .collect();
-  },
-});
-
-export const getRecentArticlesForUser = internalQuery({
-  args: { userId: v.id('users'), since: v.number() },
   handler: async (ctx, { userId, since }) => {
-    const userTopics = await ctx.db
+    const userTopicFeeds = await ctx.db
       .query('topicFeeds')
       .withIndex('by_user', (q) => q.eq('userId', userId))
       .collect();
 
-    if (userTopics.length === 0) return [];
+    if (userTopicFeeds.length === 0) {
+      return [];
+    }
 
-    const feedIds = userTopics.map((t) => t.feedId);
-    const allArticles = [];
+    const feedIds = userTopicFeeds.map((tf) => tf.feedId);
+    const allFeedItems: Doc<'feedItems'>[] = [];
 
     for (const feedId of feedIds) {
-      const articles = await ctx.db
-        .query('articles')
-        .withIndex('by_feed_and_published', (q) => q.eq('feedId', feedId).gte('publishedAt', since))
+      const feedItems = await ctx.db
+        .query('feedItems')
+        .withIndex('by_feed_and_published', (q) => q.eq('feedId', feedId).gt('publishedAt', since))
         .order('desc')
-        .take(5);
-      allArticles.push(...articles);
+        .collect();
+
+      allFeedItems.push(...feedItems);
     }
 
-    const topicMap = new Map();
-    for (const userTopic of userTopics) {
-      const topic = await ctx.db.get(userTopic.topicId);
-      if (topic) {
-        topicMap.set(userTopic.feedId, topic);
-      }
-    }
+    allFeedItems.sort((a, b) => b.publishedAt - a.publishedAt);
 
-    return allArticles
-      .sort((a, b) => b.publishedAt - a.publishedAt)
-      .slice(0, 20)
-      .map((article) => ({
-        ...article,
-        topic: topicMap.get(article.feedId),
-      }))
-      .filter((article) => article.topic);
+    return allFeedItems;
   },
 });
 
-export const createBrief = internalMutation({
+export const getUserPreferenceQuery = internalQuery({
+  args: { userId: v.id('users') },
+  handler: async (ctx, { userId }) => {
+    return await getUserPreferences(ctx, userId);
+  },
+});
+
+export const getExistingBriefItems = internalQuery({
   args: {
     userId: v.id('users'),
-    content: v.string(),
+    feedItemIds: v.array(v.id('feedItems')),
   },
-  handler: async (ctx, { userId, content }) => {
-    return await ctx.db.insert('briefs', {
+  handler: async (ctx, { userId, feedItemIds }) => {
+    const existingBriefs = await ctx.db
+      .query('briefItems')
+      .withIndex('by_user', (q) => q.eq('userId', userId))
+      .collect();
+
+    const existingFeedItemIds = new Set(
+      existingBriefs.filter((brief) => feedItemIds.includes(brief.feedItemId)).map((brief) => brief.feedItemId),
+    );
+
+    return Array.from(existingFeedItemIds);
+  },
+});
+
+export const saveBriefItem = internalMutation({
+  args: {
+    userId: v.id('users'),
+    feedItemId: v.id('feedItems'),
+    title: v.string(),
+    summary: v.string(),
+    url: v.string(),
+  },
+  handler: async (ctx, { feedItemId, userId, summary, title, url }) => {
+    const existing = await ctx.db
+      .query('briefItems')
+      .withIndex('by_user_and_feedItem', (q) => q.eq('userId', userId).eq('feedItemId', feedItemId))
+      .first();
+
+    if (existing) {
+      return existing._id;
+    }
+
+    return await ctx.db.insert('briefItems', {
+      url,
+      title,
       userId,
-      content,
-      status: 'pending',
+      summary,
+      feedItemId,
     });
   },
 });
 
-export const updateBriefStatus = internalMutation({
-  args: {
-    briefId: v.id('briefs'),
-    status: v.union(v.literal('pending'), v.literal('sent'), v.literal('failed')),
-    sentAt: v.optional(v.number()),
-  },
-  handler: async (ctx, { briefId, status, sentAt }) => {
-    return await ctx.db.patch(briefId, { status, sentAt });
-  },
-});
-
-export const generateBriefForUser = internalAction({
+export const updateUserBriefs = internalAction({
   args: { userId: v.id('users') },
-  handler: async (ctx, { userId }): Promise<Id<'briefs'> | undefined> => {
-    const preferences = await ctx.runQuery(internal.briefs.getUserPreferences, { userId });
-    if (!preferences) {
-      console.log(`No preferences found for user ${userId}`);
-      return;
+  handler: async (ctx, { userId }) => {
+    const userPreferences = await ctx.runQuery(internal.briefs.getUserPreferenceQuery, { userId });
+    if (!userPreferences) {
+      throw new ConvexError(`User preferences not found for user ${userId}`);
     }
 
     const oneWeekAgo = Date.now() - TIME_CONSTANTS.ONE_WEEK;
-    const articles = await ctx.runQuery(internal.briefs.getRecentArticlesForUser, {
+    const feedItems = await ctx.runQuery(internal.briefs.getUserFeedItems, {
       userId,
       since: oneWeekAgo,
     });
 
-    if (articles.length === 0) {
-      console.log(`No recent articles found for user ${userId}`);
-      return;
-    }
-
-    const topicGroups = new Map<string, typeof articles>();
-    for (const article of articles) {
-      const topicName = article.topic.name;
-      if (!topicGroups.has(topicName)) {
-        topicGroups.set(topicName, []);
-      }
-      topicGroups.get(topicName)!.push(article);
-    }
-
-    const briefContent: BriefContent = {
-      topics: [],
-      generatedAt: Date.now(),
-      userTimezone: preferences.brief.schedule.timezone,
-    };
-
-    for (const [topicName, topicArticles] of topicGroups) {
-      const processedArticles = [];
-
-      for (const article of topicArticles.slice(0, 3)) {
-        const targetLanguage = preferences.brief.translation.enabled
-          ? preferences.brief.translation.language
-          : undefined;
-
-        const processedResult = await processArticleContent(article.url, targetLanguage);
-
-        if (processedResult.isOk()) {
-          const processed = processedResult.value;
-          processedArticles.push({
-            title: processed.title,
-            url: processed.url,
-            summary: processed.summary,
-            translation: processed.translations[0]?.text,
-          });
-        }
-      }
-
-      if (processedArticles.length > 0) {
-        briefContent.topics.push({
-          name: topicName,
-          articles: processedArticles,
-        });
-      }
-    }
-
-    if (briefContent.topics.length === 0) {
-      console.log(`No processable articles found for user ${userId}`);
-      return;
-    }
-
-    const briefText = formatBriefContent(briefContent);
-    const briefId: Id<'briefs'> = await ctx.runMutation(internal.briefs.createBrief, {
+    const feedItemIds = feedItems.map((item) => item._id);
+    const existingBriefItemIds = await ctx.runQuery(internal.briefs.getExistingBriefItems, {
       userId,
-      content: briefText,
+      feedItemIds,
     });
 
-    console.log(`Brief generated for user ${userId}, briefId: ${briefId}`);
-    return briefId;
+    const feedItemsToProcess = feedItems.filter((item) => !existingBriefItemIds.includes(item._id));
+
+    console.log(`Found ${feedItems.length} total feed items, ${feedItemsToProcess.length} need processing`);
+
+    const concurrencyLimit = pLimit(5);
+    const processPromises = feedItemsToProcess.map((feedItem) =>
+      concurrencyLimit(async () => {
+        const processResult = await processFeedItem(feedItem.url);
+        if (processResult.isErr()) {
+          console.warn(`Failed to process feed item ${feedItem.url}:`, processResult.error);
+          return null;
+        }
+
+        await ctx.runMutation(internal.briefs.saveBriefItem, {
+          userId,
+          url: feedItem.url,
+          feedItemId: feedItem._id,
+          title: processResult.value.title,
+          summary: processResult.value.summary,
+        });
+
+        return {
+          url: feedItem.url,
+          title: processResult.value.title,
+          summary: processResult.value.summary,
+        };
+      }),
+    );
+
+    const processedItems = (await Promise.all(processPromises)).filter((item) => item !== null) as ProcessedFeedItem[];
+    return processedItems;
   },
 });
 
-export const getNextBriefSchedule = internalQuery({
-  args: { userId: v.id('users') },
-  handler: async (ctx, { userId }) => {
-    const preferences = await ctx.db
-      .query('preferences')
-      .withIndex('by_user', (q) => q.eq('userId', userId))
-      .unique();
-
-    if (!preferences) {
-      return null;
-    }
-
-    return calculateNextBriefTime({
-      timezone: preferences.brief.schedule.timezone,
-      scheduledHour: preferences.brief.schedule.hour,
-      scheduledDayOfWeek: preferences.brief.schedule.dayOfWeek,
-    });
-  },
-});
-
-export const generateScheduledBriefs = internalAction({
+export const getUserBriefs = query({
   args: {},
   handler: async (ctx) => {
-    const now = new Date();
-    const currentHour = now.getUTCHours();
-    const currentDayOfWeek = now.getUTCDay();
+    const userId = requireAuth(await getAuthUserId(ctx));
+    const userPreferences = await getUserPreferences(ctx, userId);
 
-    console.log(`Checking for briefs to generate at UTC ${currentHour}:00 on day ${currentDayOfWeek}`);
-
-    for (let timezoneOffset = -12; timezoneOffset <= 14; timezoneOffset++) {
-      const localHour = (currentHour + timezoneOffset + 24) % 24;
-      const localDayOfWeek = currentDayOfWeek;
-
-      const users = await ctx.runQuery(internal.briefs.getUsersReadyForBrief, {
-        dayOfWeek: localDayOfWeek,
-        hour: localHour,
-      });
-
-      console.log(`Found ${users.length} users ready for brief at local time ${localHour}:00`);
-
-      for (const user of users) {
-        try {
-          await ctx.runAction(internal.briefs.generateBriefForUser, {
-            userId: user.userId,
-          });
-        } catch (error) {
-          console.error(`Failed to generate brief for user ${user.userId}:`, error);
-        }
-      }
+    if (!userPreferences) {
+      return [];
     }
+
+    const briefs = await ctx.db
+      .query('briefItems')
+      .withIndex('by_user', (q) => q.eq('userId', userId))
+      .order('desc')
+      .collect();
+
+    return briefs.map((brief) => ({
+      id: brief._id,
+      url: brief.url,
+      title: brief.title,
+      summary: brief.summary,
+      createdAt: new Date(brief._creationTime).toISOString(),
+    }));
   },
 });
