@@ -17,7 +17,7 @@ import { Stepper, useStepper } from '@/ui/stepper';
 import { RadioGroup, RadioGroupItem } from '@/ui/radio';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/ui/select';
 
-import { PiCheck, PiCheckCircle, PiPlus } from 'react-icons/pi';
+import { PiCheck, PiPlus } from 'react-icons/pi';
 import { api } from 'convex/_generated/api';
 import { useMutation } from '@tanstack/react-query';
 import { useConvexMutation } from '@convex-dev/react-query';
@@ -26,8 +26,8 @@ import { convexQuery } from '@convex-dev/react-query';
 
 export const Route = createFileRoute('/_auth/onboarding')({
   component: RouteComponent,
-  beforeLoad: async ({ context }) => {
-    await context.queryClient.ensureQueryData(convexQuery(api.topics.getCuratedTopics, { limit: 9 }));
+  loader: async ({ context }) => {
+    await context.queryClient.ensureQueryData(convexQuery(api.topics.getCuratedTopics, { limit: 12 }));
   },
 });
 
@@ -94,7 +94,7 @@ const NameStep = () => {
   };
 
   return (
-    <div className="relative flex w-full max-w-md flex-col items-center gap-6 rounded-3xl border border-black/5 bg-white p-8 pt-16 text-left">
+    <div className="relative flex w-full max-w-xl flex-col items-center gap-6 rounded-3xl border border-black/5 bg-white p-8 pt-16 text-left">
       <StepperProgressBar totalSteps={totalSteps} currentStep={activeStepIndex + 1} />
 
       <div className="flex flex-col gap-1">
@@ -125,7 +125,7 @@ const TopicsStep = () => {
   const { formData, updateFormData } = useFormData();
   const { activeStepIndex, totalSteps, nextStep } = useStepper();
 
-  const curatedTopicsQuery = useQuery(convexQuery(api.topics.getCuratedTopics, { limit: 9 }));
+  const curatedTopicsQuery = useQuery(convexQuery(api.topics.getCuratedTopics, { limit: 12 }));
 
   const form = useForm<z.infer<typeof topicsSchema>>({
     resolver: zodResolver(topicsSchema),
@@ -146,12 +146,12 @@ const TopicsStep = () => {
   };
 
   return (
-    <div className="relative flex w-full max-w-lg flex-col items-center gap-6 rounded-3xl border border-black/5 bg-white p-8 pt-16 text-left">
+    <div className="relative flex w-full max-w-xl flex-col items-center gap-6 rounded-3xl border border-black/5 bg-white p-8 pt-16 text-left">
       <StepperProgressBar totalSteps={totalSteps} currentStep={activeStepIndex + 1} />
 
       <div className="flex flex-col gap-1 text-center">
         <h2 className="text-lg font-medium text-slate-800">Choose your interests</h2>
-        <p className="text-xs text-slate-600">Select 3-5 topics to get personalized briefs</p>
+        <p className="text-xs text-slate-600">Follow some topics to get started</p>
       </div>
 
       <form className="flex w-full flex-col gap-6" onSubmit={form.handleSubmit(onSubmit)}>
@@ -171,12 +171,12 @@ const TopicsStep = () => {
               >
                 <div className="flex items-center gap-2">
                   {isSelected ? (
-                    <PiCheckCircle size={20} className="shrink-0 text-slate-500" />
+                    <PiCheck size={20} className="shrink-0 text-slate-500" />
                   ) : (
                     <PiPlus size={20} className="shrink-0 text-slate-500" />
                   )}
 
-                  <span className="text-xs text-slate-950 capitalize">{name}</span>
+                  <span className="text-xs whitespace-nowrap text-slate-950 capitalize">{name}</span>
                 </div>
               </button>
             );
@@ -232,7 +232,7 @@ const BriefTimingStep = () => {
   };
 
   return (
-    <div className="relative flex w-full max-w-2xl flex-col items-center gap-6 rounded-3xl border border-black/5 bg-white p-8 pt-16 text-left">
+    <div className="relative flex w-full max-w-xl flex-col items-center gap-6 rounded-3xl border border-black/5 bg-white p-8 pt-16 text-left">
       <StepperProgressBar totalSteps={totalSteps} currentStep={activeStepIndex + 1} />
 
       <div className="flex flex-col gap-1 text-center">
@@ -319,15 +319,15 @@ const FinalStep = () => {
   return (
     <div className="relative flex w-full max-w-md min-w-sm flex-col items-center gap-10 rounded-3xl border border-slate-300 bg-white p-6 pt-4 text-center">
       <div className="flex flex-col gap-1">
-        <h2 className="text-lg font-medium text-slate-800">Welcome to 🗞️ RSSBrief</h2>
-        <p className="text-sm text-slate-600">You're all set up!</p>
+        <h2 className="text-lg font-medium text-slate-800">Welcome to RSSBrief</h2>
+        <p className="text-sm text-slate-600">You're all set! Expect to get your first brief soon.</p>
       </div>
 
       <PiCheck className="h-24 w-24 text-slate-800" />
 
       <div className="flex w-full flex-col gap-4">
         <Button asChild>
-          <Link to="/briefs">Go to Feeds</Link>
+          <Link to="/briefs">Go to Briefs</Link>
         </Button>
       </div>
     </div>

@@ -55,10 +55,17 @@ function RouteComponent() {
               {userTopicsQuery.data
                 ?.filter((topic) => topic.bookmarked)
                 .map((topic, index) => (
-                  <div key={index} className="flex items-center gap-2 text-sm">
+                  <Link
+                    search={{
+                      topics: [topic.id],
+                    }}
+                    to={'/briefs'}
+                    key={index}
+                    className="flex items-center gap-2 text-sm"
+                  >
                     <div className="size-2 rounded-full bg-slate-300"></div>
                     <span className="text-sm text-black/70">{topic.name}</span>
-                  </div>
+                  </Link>
                 ))}
             </div>
           </nav>

@@ -1,6 +1,7 @@
 import React from 'react';
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
+import { z } from 'zod';
 
 import { api } from 'convex/_generated/api';
 import { useQuery } from '@tanstack/react-query';
@@ -11,9 +12,16 @@ import { ScrollArea } from '@/ui/scroll-area';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuCheckboxItem } from '@/ui/dropdown-menu';
 import { Button } from '@/ui/button';
 import { PiEmpty } from 'react-icons/pi';
+import { format } from 'date-fns';
+
+const briefsSearchSchema = z.object({
+  topics: z.array(z.string()).optional().catch([]),
+  sort: z.enum(['newest', 'oldest']).optional().catch('newest'),
+});
 
 export const Route = createFileRoute('/_auth/_app/briefs')({
   component: RouteComponent,
+  validateSearch: briefsSearchSchema,
 });
 
 type BriefItem = Pick<Doc<'briefItems'>, 'title' | 'summary' | 'url'> & {
@@ -26,9 +34,16 @@ type BriefItem = Pick<Doc<'briefItems'>, 'title' | 'summary' | 'url'> & {
 };
 
 function RouteComponent() {
+  const navigate = useNavigate({ from: Route.fullPath });
+  const { topics = [], sort = 'newest' } = Route.useSearch();
   const [activeBrief, setActiveBrief] = React.useState<BriefItem | null>(null);
-  const [selectedTopics, setSelectedTopics] = React.useState<Set<string>>(new Set(['all']));
-  const [sortOrder, setSortOrder] = React.useState<'newest' | 'oldest'>('newest');
+  
+  const selectedTopics = React.useMemo(() => {
+    if (topics.length === 0) return new Set(['all']);
+    return new Set(topics);
+  }, [topics]);
+  
+  const sortOrder = sort;
   const userBriefsQuery = useQuery(convexQuery(api.briefs.getUserBriefs, {}));
   const userTopicsQuery = useQuery(convexQuery(api.topics.getUserTopics, {}));
 
@@ -68,10 +83,16 @@ function RouteComponent() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
-                  <DropdownMenuCheckboxItem checked={sortOrder === 'newest'} onClick={() => setSortOrder('newest')}>
+                  <DropdownMenuCheckboxItem 
+                    checked={sortOrder === 'newest'} 
+                    onClick={() => navigate({ search: { topics, sort: 'newest' } })}
+                  >
                     Newest
                   </DropdownMenuCheckboxItem>
-                  <DropdownMenuCheckboxItem checked={sortOrder === 'oldest'} onClick={() => setSortOrder('oldest')}>
+                  <DropdownMenuCheckboxItem 
+                    checked={sortOrder === 'oldest'} 
+                    onClick={() => navigate({ search: { topics, sort: 'oldest' } })}
+                  >
                     Oldest
                   </DropdownMenuCheckboxItem>
                 </DropdownMenuContent>
@@ -88,7 +109,7 @@ function RouteComponent() {
                     checked={selectedTopics.has('all')}
                     onCheckedChange={(checked) => {
                       if (checked) {
-                        setSelectedTopics(new Set(['all']));
+                        navigate({ search: { topics: [], sort } });
                       }
                     }}
                   >
@@ -99,17 +120,18 @@ function RouteComponent() {
                       key={topic.id}
                       checked={selectedTopics.has(topic.id)}
                       onCheckedChange={(checked) => {
-                        const newSelected = new Set(selectedTopics);
-                        newSelected.delete('all');
+                        const currentTopics = [...topics];
                         if (checked) {
-                          newSelected.add(topic.id);
+                          if (!currentTopics.includes(topic.id)) {
+                            currentTopics.push(topic.id);
+                          }
                         } else {
-                          newSelected.delete(topic.id);
+                          const index = currentTopics.indexOf(topic.id);
+                          if (index > -1) {
+                            currentTopics.splice(index, 1);
+                          }
                         }
-                        if (newSelected.size === 0) {
-                          newSelected.add('all');
-                        }
-                        setSelectedTopics(newSelected);
+                        navigate({ search: { topics: currentTopics, sort } });
                       }}
                     >
                       {topic.name}
@@ -121,23 +143,29 @@ function RouteComponent() {
           </div>
           <ScrollArea className="h-full">
             <div className="flex flex-col divide-y divide-black/50">
-              {filteredBriefs.map((brief) => {
-                const relativeDate = formatRelative(new Date(brief.createdAt), new Date());
-                return (
-                  <button
-                    onClick={() => setActiveBrief(brief)}
-                    key={brief.id}
-                    className={cn(
-                      'flex flex-col gap-1 border-black/5 px-4 py-3 text-left outline-none hover:bg-gray-50',
-                      activeBrief?.id === brief.id ? 'bg-slate-500/5' : 'bg-white',
-                    )}
-                  >
-                    <span className="mt-2 block text-xs text-slate-500 capitalize">{relativeDate}</span>
-                    <h3 className="text-sm text-slate-900">{brief.title}</h3>
-                    <p className="mt-1 max-w-xs truncate text-xs text-slate-600">{brief.summary.slice(0, 50)}</p>
-                  </button>
-                );
-              })}
+              {filteredBriefs.length > 0 ? (
+                filteredBriefs.map((brief) => {
+                  const relativeDate = formatRelative(new Date(brief.createdAt), new Date());
+                  return (
+                    <button
+                      onClick={() => setActiveBrief(brief)}
+                      key={brief.id}
+                      className={cn(
+                        'flex flex-col gap-1 border-black/5 px-4 py-3 text-left outline-none hover:bg-gray-50',
+                        activeBrief?.id === brief.id ? 'bg-slate-500/5' : 'bg-white',
+                      )}
+                    >
+                      <span className="mt-2 block text-xs text-slate-500 capitalize">{relativeDate}</span>
+                      <h3 className="text-sm text-slate-900">{brief.title}</h3>
+                      <p className="mt-1 max-w-xs truncate text-xs text-slate-600">{brief.summary.slice(0, 50)}</p>
+                    </button>
+                  );
+                })
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center">
+                  <p className="text-sm text-black/40">Your briefs will appear here once generated</p>
+                </div>
+              )}
             </div>
           </ScrollArea>
         </div>
@@ -161,14 +189,23 @@ const ActiveBrief = (props: { brief: BriefItem }) => {
   return (
     <div className="flex h-full w-full max-w-prose flex-col gap-5">
       <h1 className="text-2xl font-medium tracking-tight text-slate-900 capitalize">{brief.title}</h1>
-      <div>
-        <span className="text-sm text-slate-500">
-          Brief generated on {new Date(brief.createdAt).toLocaleDateString()}
+      <div className="flex items-center gap-4">
+        <span className="text-sm text-black/80">
+          {format(new Date(brief.createdAt), 'MMMM dd, yyyy')} - {brief.topic ? brief.topic.name : 'No Topic'}
         </span>
+
+        <a
+          href={brief.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline"
+        >
+          <span className="text-sm">Open original Source</span>
+        </a>
       </div>
 
       <div className="text-sm text-slate-700">
-        <p className="text-base leading-relaxed text-black/90">{brief.summary}</p>
+        <p className="font-serif text-lg leading-relaxed text-black/80">{brief.summary}</p>
       </div>
     </div>
   );
