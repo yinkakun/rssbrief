@@ -5,6 +5,7 @@ import { requireAuth } from './utils';
 import { internal } from './_generated/api';
 import { Id } from './_generated/dataModel';
 import { internalQuery, internalMutation, MutationCtx, query, mutation } from './_generated/server';
+import { updateFeedTimestamp } from './feeds';
 
 export const getCuratedTopicByName = internalQuery({
   args: { name: v.string() },
@@ -180,7 +181,9 @@ export const getUserTopics = query({
         feeds,
         id: topic._id,
         name: topic.name,
+        userId: topic.userId,
         createdAt: topic.createdAt,
+        bookmarked: topic.bookmarked ?? false,
       };
     });
 
@@ -250,6 +253,54 @@ export const unfollowTopic = mutation({
     await Promise.all(deletePromises);
 
     return userTopicFeeds.map((relation) => relation._id);
+  },
+});
+
+export const deleteUserTopic = mutation({
+  args: {
+    topicId: v.id('topics'),
+  },
+  handler: async (ctx, { topicId }) => {
+    const userId = requireAuth(await getAuthUserId(ctx));
+    const topic = await ctx.db.get(topicId);
+    if (!topic) {
+      throw new ConvexError('Topic not found');
+    }
+
+    if (topic.userId !== userId) {
+      throw new ConvexError('You do not have permission to delete this topic');
+    }
+
+    const topicFeeds = await ctx.db
+      .query('topicFeeds')
+      .withIndex('by_topic', (q) => q.eq('topicId', topicId))
+      .collect();
+
+    const deleteFeedPromises = topicFeeds.map((tf) => ctx.db.delete(tf._id));
+    await Promise.all(deleteFeedPromises);
+
+    await ctx.db.delete(topicId);
+    return topicId;
+  },
+});
+
+export const bookmarkTopic = mutation({
+  args: {
+    topicId: v.id('topics'),
+    bookmarked: v.boolean(),
+  },
+  handler: async (ctx, { topicId, bookmarked }) => {
+    requireAuth(await getAuthUserId(ctx));
+    const topic = await ctx.db.get(topicId);
+    if (!topic) {
+      throw new ConvexError('Topic not found');
+    }
+
+    await ctx.db.patch(topicId, {
+      bookmarked,
+    });
+
+    return topicId;
   },
 });
 

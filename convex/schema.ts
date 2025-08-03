@@ -30,6 +30,7 @@ export default defineSchema({
     name: v.string(),
     createdAt: v.number(),
     tags: v.array(v.string()),
+    bookmarked: v.optional(v.boolean()),
     userId: v.union(v.id('users'), v.null()),
   })
     .index('by_user', ['userId'])
