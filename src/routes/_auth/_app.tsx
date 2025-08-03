@@ -1,28 +1,37 @@
+import React from 'react';
 import { createFileRoute } from '@tanstack/react-router';
-
-import { type IconType } from 'react-icons';
-import { type RegisteredRouter, Outlet, Link } from '@tanstack/react-router';
-
+import { type RegisteredRouter, Outlet, Link, useNavigate } from '@tanstack/react-router';
 import { api } from 'convex/_generated/api';
 import { useQuery } from '@tanstack/react-query';
 import { convexQuery } from '@convex-dev/react-query';
 
+import { type IconType } from 'react-icons';
 import { PiGearFine } from 'react-icons/pi';
+import { ThreeDotsScale } from 'react-svg-spinners';
 import { VscMapVertical, VscSymbolNumeric } from 'react-icons/vsc';
-
-// todo schedule, follow top topics, summary style,
 
 export const Route = createFileRoute('/_auth/_app')({
   component: RouteComponent,
 });
 
 function RouteComponent() {
-  // fetch current user here, redirect to onboarding if not onboarded
-
-  const userTopicsQuery = useQuery(convexQuery(api.topics.getUserTopics, {}));
+  const navigate = useNavigate();
   const currentUserQuery = useQuery({ ...convexQuery(api.users.getCurrentUser, {}) });
+  const userTopicsQuery = useQuery(convexQuery(api.topics.getUserTopics, {}));
 
-  console.log('Current user:', currentUserQuery.data);
+  React.useEffect(() => {
+    if (currentUserQuery.isSuccess && !currentUserQuery.data?.onboarded) {
+      navigate({ to: '/onboarding' });
+    }
+  }, [currentUserQuery.data, currentUserQuery.isSuccess, navigate]);
+
+  if (currentUserQuery.isLoading || userTopicsQuery.isLoading) {
+    return (
+      <div className="flex h-dvh items-center justify-center bg-white text-slate-500">
+        <ThreeDotsScale width={50} height={50} />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-[100dvh] bg-[#F8F8F8]">
