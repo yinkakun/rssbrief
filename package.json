@@ -17,6 +17,7 @@
     "@auth/core": "^0.37.4",
     "@convex-dev/auth": "^0.0.87",
     "@convex-dev/react-query": "^0.0.0-alpha.11",
+    "@convex-dev/resend": "^0.1.7",
     "@fontsource/inter": "^5.2.6",
     "@hookform/resolvers": "^5.2.1",
     "@radix-ui/react-dialog": "^1.1.14",
