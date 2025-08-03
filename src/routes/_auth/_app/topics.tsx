@@ -1,18 +1,20 @@
-import { Input } from '@/ui/input';
-import { Button } from '@/ui/button';
-import { VscAdd } from 'react-icons/vsc';
-import { PiDotsThreeVertical, PiPlus, PiX } from 'react-icons/pi';
 import { createFileRoute } from '@tanstack/react-router';
+
+import { cn } from '@/lib/utils';
+import { Input } from '@/ui/input';
+import { toast } from '@/ui/toaster';
+import { Button } from '@/ui/button';
 import { Dialog, DialogContent, DialogClose, DialogTrigger, DialogTitle } from '@/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/ui/dropdown-menu';
-import { toast } from '@/ui/toaster';
-import { cn } from '@/lib/utils';
+
+import { VscAdd } from 'react-icons/vsc';
+import { PiDotsThreeVertical, PiPlus, PiX } from 'react-icons/pi';
 
 import { api } from 'convex/_generated/api';
-import { useMutation } from '@tanstack/react-query';
-import { useConvexMutation } from '@convex-dev/react-query';
 import { useQuery } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { convexQuery } from '@convex-dev/react-query';
+import { useConvexMutation } from '@convex-dev/react-query';
 
 export const Route = createFileRoute('/_auth/_app/topics')({
   component: RouteComponent,
@@ -26,9 +28,13 @@ function RouteComponent() {
         <CreateTopic />
       </div>
 
-      <div className="flex flex-1 flex-col gap-20 overflow-y-auto">
-        <FollowedTopics />
-        <CuratedTopics />
+      <div className="grid grid-cols-12 gap-20 overflow-y-auto">
+        <div className="col-span-8">
+          <FollowedTopics />
+        </div>
+        <div className="col-span-4">
+          <CuratedTopics />
+        </div>
       </div>
     </div>
   );
@@ -46,19 +52,23 @@ const CreateTopic = () => {
         </DialogTrigger>
         <DialogContent className="max-w-2xl">
           <DialogTitle>Create New Topic</DialogTitle>
-          <div className="flex flex-col gap-4 rounded-2xl border-slate-200 p-3">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-sm text-slate-500">Url</span>
-              <Input type="text" placeholder="Enter topic title" className="flex-1" />
-              <button className="flex size-9 items-center justify-center rounded-lg bg-slate-50 outline-0 transition-colors hover:bg-slate-100">
-                <PiX className="text-slate-500" size={20} />
-              </button>
-            </div>
+          <div className="flex flex-col gap-4 rounded-2xl border-slate-200">
+            <div className="flex flex-col gap-5 rounded-2xl border border-black/10 p-4 px-3">
+              <Input type="text" placeholder="Enter topic title" />
 
-            <Button variant="secondary" size="sm">
-              <PiPlus />
-              <span>Add more</span>
-            </Button>
+              <div className="w-fill flex flex-col gap-3 pt-4 pb-0">
+                <div className="flex items-center justify-between gap-3">
+                  <Input type="text" placeholder="Enter RSS url" className="flex-1" />
+                  <button className="flex size-9 items-center justify-center rounded-lg bg-slate-50 outline-0 transition-colors hover:bg-slate-100">
+                    <PiX className="text-slate-500" size={20} />
+                  </button>
+                </div>
+                <Button variant="secondary" size="sm" className="w-full">
+                  <PiPlus />
+                  <span>Add more</span>
+                </Button>
+              </div>
+            </div>
           </div>
           <div className="mt-6 grid grid-cols-2 gap-4">
             <DialogClose asChild>
@@ -86,8 +96,6 @@ const FollowedTopics = () => {
       </div>
     );
   }
-
-  //
 
   return (
     <div className="grid grid-cols-3 gap-6">
