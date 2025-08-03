@@ -6,10 +6,9 @@ import { type RegisteredRouter, Outlet, Link } from '@tanstack/react-router';
 import { api } from 'convex/_generated/api';
 import { useQuery } from '@tanstack/react-query';
 import { convexQuery } from '@convex-dev/react-query';
-import { useAuthActions } from '@convex-dev/auth/react';
 
 import { PiGearFine } from 'react-icons/pi';
-import { VscMapVertical, VscVersions, VscSymbolNumeric } from 'react-icons/vsc';
+import { VscMapVertical, VscSymbolNumeric } from 'react-icons/vsc';
 
 // todo schedule, follow top topics, summary style,
 
@@ -20,6 +19,7 @@ export const Route = createFileRoute('/_auth/_app')({
 function RouteComponent() {
   // fetch current user here, redirect to onboarding if not onboarded
 
+  const userTopicsQuery = useQuery(convexQuery(api.topics.getUserTopics, {}));
   const currentUserQuery = useQuery({ ...convexQuery(api.users.getCurrentUser, {}) });
 
   console.log('Current user:', currentUserQuery.data);
@@ -52,12 +52,14 @@ function RouteComponent() {
 
           <nav className="flex flex-col gap-3 p-3">
             <div className="flex flex-col gap-2 px-3">
-              {TOPICS_FOLLOWED.map((topic, index) => (
-                <div key={index} className="flex items-center gap-2 text-sm">
-                  <div className="size-2 rounded-full bg-slate-300"></div>
-                  <span className="text-sm text-black/70">{topic.title}</span>
-                </div>
-              ))}
+              {userTopicsQuery.data
+                ?.filter((topic) => topic.bookmarked)
+                .map((topic, index) => (
+                  <div key={index} className="flex items-center gap-2 text-sm">
+                    <div className="size-2 rounded-full bg-slate-300"></div>
+                    <span className="text-sm text-black/70">{topic.name}</span>
+                  </div>
+                ))}
             </div>
           </nav>
 
@@ -105,5 +107,3 @@ const navItems: NavItem[] = [
   { label: 'Topics', path: '/topics', icon: VscSymbolNumeric },
   { label: 'Settings', path: '/settings', icon: PiGearFine },
 ];
-
-const TOPICS_FOLLOWED = [{ title: 'Arts' }, { title: 'Technology' }, { title: 'Science' }];
