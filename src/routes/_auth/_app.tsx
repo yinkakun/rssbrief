@@ -61,16 +61,27 @@ function RouteComponent() {
             </div>
           </nav>
 
-          <div className="m-3 mt-auto rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
-            Powered by Convex and Resend. Open source on{' '}
-            <a
-              href="https://github.com/rssbrief/rssbrief"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-600 hover:underline"
-            >
-              GitHub
-            </a>
+          <div className="m-3 mt-auto rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-600">
+            <span className="text-sm text-slate-500">
+              RSSBrief is powered by{' '}
+              <a
+                href="https://convex.dev"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:text-blue-800 hover:underline"
+              >
+                Convex
+              </a>{' '}
+              and{' '}
+              <a
+                href="https://resend.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:text-blue-800 hover:underline"
+              >
+                Resend
+              </a>
+            </span>
           </div>
         </aside>
       </div>
@@ -90,8 +101,7 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  // { label: 'Briefs', path: '/briefs', icon: VscVersions },
-  { label: 'Briefs', path: '/feeds', icon: VscMapVertical },
+  { label: 'Briefs', path: '/briefs', icon: VscMapVertical },
   { label: 'Topics', path: '/topics', icon: VscSymbolNumeric },
   { label: 'Settings', path: '/settings', icon: PiGearFine },
 ];

@@ -24,6 +24,28 @@ import { useConvexMutation } from '@convex-dev/react-query';
 import { useQuery } from '@tanstack/react-query';
 import { convexQuery } from '@convex-dev/react-query';
 
+export const Route = createFileRoute('/_auth/onboarding')({
+  component: RouteComponent,
+  beforeLoad: async ({ context }) => {
+    await context.queryClient.ensureQueryData(convexQuery(api.topics.getCuratedTopics, { limit: 9 }));
+  },
+});
+
+function RouteComponent() {
+  return (
+    <div className="flex min-h-[100dvh] grow flex-col items-center justify-center bg-slate-50">
+      <div>
+        <Stepper>
+          <NameStep />
+          <TopicsStep />
+          <BriefTimingStep />
+          <FinalStep />
+        </Stepper>
+      </div>
+    </div>
+  );
+}
+
 const nameSchema = z.object({
   name: z.string().min(1, 'First name is required').max(100, 'First name must be 100 characters or less'),
 });
@@ -56,28 +78,6 @@ const useFormData = () => {
 
   return { formData, updateFormData };
 };
-
-export const Route = createFileRoute('/_auth/onboarding')({
-  component: RouteComponent,
-  beforeLoad: async ({ context }) => {
-    await context.queryClient.ensureQueryData(convexQuery(api.topics.getCuratedTopics, { limit: 9 }));
-  },
-});
-
-function RouteComponent() {
-  return (
-    <div className="flex min-h-[100dvh] grow flex-col items-center justify-center bg-slate-50">
-      <div>
-        <Stepper>
-          <NameStep />
-          <TopicsStep />
-          <BriefTimingStep />
-          <FinalStep />
-        </Stepper>
-      </div>
-    </div>
-  );
-}
 
 const NameStep = () => {
   const { formData, updateFormData } = useFormData();
@@ -188,7 +188,7 @@ const TopicsStep = () => {
         )}
 
         <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
-          {form.formState.isSubmitting ? <Spinner /> : 'Continue'}
+          {form.formState.isSubmitting ? <Spinner /> : 'Next'}
         </Button>
       </form>
     </div>
@@ -327,7 +327,7 @@ const FinalStep = () => {
 
       <div className="flex w-full flex-col gap-4">
         <Button asChild>
-          <Link to="/feeds">Go to Feeds</Link>
+          <Link to="/briefs">Go to Feeds</Link>
         </Button>
       </div>
     </div>
