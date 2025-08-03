@@ -111,33 +111,43 @@ const briefsFormSchema = z.object({
   dayOfWeek: z.number().min(0, 'Day of week is required'),
   timezone: z.string().min(1, 'Preferred timezone is required'),
   style: z.enum(SUMMARY_STYLES.map((style) => style.value)),
+  emailNotifications: z.boolean(),
 });
 
 const BriefsSettings = () => {
   const userPreferencesQuery = useConvexQuery(api.users.getCurrentUser, {});
-
   const userPreferences = userPreferencesQuery?.preferences;
+
+  const getDefaultValues = () => ({
+    hour: userPreferences?.briefSchedule?.hour ?? 9,
+    dayOfWeek: userPreferences?.briefSchedule?.dayOfWeek ?? 1,
+    timezone: userPreferences?.briefSchedule?.timezone || timezones[0]?.tzCode || 'UTC',
+    style: userPreferences?.briefStyle ?? 'concise',
+    emailNotifications: userPreferences?.notifications?.email ?? true,
+  });
 
   const form = useForm({
     resolver: zodResolver(briefsFormSchema),
-    defaultValues: {
-      hour: 0,
-      dayOfWeek: 0,
-      timezone: timezones[0].tzCode,
-      style: 'concise' as const,
-    },
+    defaultValues: getDefaultValues(),
   });
 
   useEffect(() => {
-    if (userPreferences) {
-      form.reset({
-        hour: userPreferences.briefSchedule?.hour ?? 0,
-        dayOfWeek: userPreferences.briefSchedule?.dayOfWeek ?? 0,
-        timezone: userPreferences.briefSchedule?.timezone ?? timezones[0].tzCode,
+    if (userPreferences?.briefSchedule) {
+      const scheduleData = {
+        hour: userPreferences.briefSchedule.hour ?? 9,
+        dayOfWeek: userPreferences.briefSchedule.dayOfWeek ?? 1,
+        timezone: userPreferences.briefSchedule.timezone || timezones[0]?.tzCode || 'UTC',
         style: userPreferences.briefStyle ?? 'concise',
-      });
+        emailNotifications: userPreferences.notifications?.email ?? true,
+      };
+
+      form.setValue('hour', scheduleData.hour);
+      form.setValue('style', scheduleData.style);
+      form.setValue('timezone', scheduleData.timezone);
+      form.setValue('dayOfWeek', scheduleData.dayOfWeek);
+      form.setValue('emailNotifications', scheduleData.emailNotifications);
     }
-  }, [userPreferencesQuery?.preferences]);
+  }, [userPreferences, form]);
 
   const updatePreferencesMutation = useMutation({
     mutationFn: useConvexMutation(api.users.updateUserPreferences),
@@ -160,17 +170,15 @@ const BriefsSettings = () => {
         },
         style: data.style,
       },
+      notifications: {
+        email: data.emailNotifications,
+      },
     });
-  };
-
-  const onInvalidSubmit = () => {
-    const errors = form.formState.errors;
-    console.log('Form errors:', errors);
   };
 
   return (
     <form
-      onSubmit={form.handleSubmit(onSubmit, onInvalidSubmit)}
+      onSubmit={form.handleSubmit(onSubmit)}
       className="flex w-full flex-col gap-8 rounded-2xl border border-black/5 bg-white"
     >
       <div className="px-4 py-2">
@@ -187,7 +195,7 @@ const BriefsSettings = () => {
             control={form.control}
             render={({ field }) => (
               <RadioGroup
-                value={field.value.toString()}
+                value={field.value?.toString()}
                 onValueChange={(value) => field.onChange(Number(value))}
                 className="flex w-full items-center justify-around"
               >
@@ -196,11 +204,7 @@ const BriefsSettings = () => {
                     key={day.value}
                     className="flex w-full items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-center hover:bg-slate-100"
                   >
-                    <RadioGroupItem
-                      defaultValue={userPreferences?.briefSchedule?.dayOfWeek?.toString()}
-                      value={day.value.toString()}
-                      id={`day-${day.value}`}
-                    />
+                    <RadioGroupItem value={day.value.toString()} id={`day-${day.value}`} />
                     <span className="text-xs">{day.label}</span>
                   </label>
                 ))}
@@ -213,12 +217,15 @@ const BriefsSettings = () => {
       <div className="grid grid-cols-2 gap-4 px-4">
         <div className="flex flex-col gap-2">
           <label className="text-sm font-medium text-slate-950">Hour</label>
-
           <Controller
             name="hour"
             control={form.control}
             render={({ field }) => (
-              <Select onValueChange={(value) => field.onChange(Number(value))} value={field.value.toString()}>
+              <Select
+                onValueChange={(value) => field.onChange(Number(value))}
+                value={field.value?.toString() || ''}
+                key={`hour-${field.value}`}
+              >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select hour" />
                 </SelectTrigger>
@@ -244,7 +251,7 @@ const BriefsSettings = () => {
             name="timezone"
             control={form.control}
             render={({ field }) => (
-              <Select value={field.value} onValueChange={field.onChange}>
+              <Select value={field.value || ''} onValueChange={field.onChange} key={`timezone-${field.value}`}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select a time zone" />
                 </SelectTrigger>
@@ -270,12 +277,7 @@ const BriefsSettings = () => {
             name="style"
             control={form.control}
             render={({ field }) => (
-              <RadioGroup
-                value={field.value}
-                onValueChange={field.onChange}
-                className="grid grid-cols-2 gap-3"
-                defaultValue={userPreferences?.briefStyle}
-              >
+              <RadioGroup value={field.value} onValueChange={field.onChange} className="grid grid-cols-2 gap-3">
                 {SUMMARY_STYLES.map((style) => (
                   <label
                     key={style.value}
@@ -296,16 +298,18 @@ const BriefsSettings = () => {
         </div>
       </div>
 
-      {/* <div className="flex flex-col gap-2 px-4">
-        <h2 className="text-sm font-medium text-slate-950">Notifications</h2>
-        <div className="flex w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-          <label htmlFor="name" className="text-sm text-slate-950">
-            Email
-          </label>
-
-          <Switch id="enable-notifications" {...form.register('')} />
+      <div className="px-4">
+        <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium text-slate-950">Email Notifications</label>
+          </div>
+          <Controller
+            name="emailNotifications"
+            control={form.control}
+            render={({ field }) => <Switch checked={field.value} onCheckedChange={field.onChange} />}
+          />
         </div>
-      </div> */}
+      </div>
 
       <div className="flex w-full items-center justify-end border-t border-slate-100 p-4">
         <Button

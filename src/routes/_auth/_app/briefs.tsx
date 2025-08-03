@@ -6,17 +6,11 @@ import { api } from 'convex/_generated/api';
 import { useQuery } from '@tanstack/react-query';
 import { convexQuery } from '@convex-dev/react-query';
 import type { Doc, Id } from 'convex/_generated/dataModel';
-
 import { formatRelative } from 'date-fns';
 import { ScrollArea } from '@/ui/scroll-area';
-import {
-  DropdownMenu,
-  DropdownMenuItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-  DropdownMenuCheckboxItem,
-} from '@/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuCheckboxItem } from '@/ui/dropdown-menu';
 import { Button } from '@/ui/button';
+import { PiEmpty } from 'react-icons/pi';
 
 export const Route = createFileRoute('/_auth/_app/briefs')({
   component: RouteComponent,
@@ -151,8 +145,9 @@ function RouteComponent() {
           {activeBrief ? (
             <ActiveBrief brief={activeBrief} />
           ) : (
-            <div className="flex h-full items-center justify-center text-slate-500">
-              <p className="text-2xl text-gray-400">Select a brief</p>
+            <div className="flex h-full flex-col items-center justify-center gap-2">
+              <PiEmpty size={80} className="text-black/10" />
+              <p className="mt-2 text-lg text-black/50">Select a brief to view details</p>
             </div>
           )}
         </div>
