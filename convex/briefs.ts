@@ -43,8 +43,8 @@ export const getNextBriefSchedule = query({
     }
 
     return getNextScheduledTime({
-      timezone: userPreferences.brief.schedule.timezone,
       hour: userPreferences.brief.schedule.hour,
+      timezone: userPreferences.brief.schedule.timezone,
       dayOfWeek: userPreferences.brief.schedule.dayOfWeek,
     });
   },
@@ -232,12 +232,49 @@ export const getUserBriefs = query({
       .order('desc')
       .collect();
 
-    return briefs.map((brief) => ({
-      id: brief._id,
-      url: brief.url,
-      title: brief.title,
-      summary: brief.summary,
-      createdAt: new Date(brief._creationTime).toISOString(),
-    }));
+    const briefsWithTopics = await Promise.all(
+      briefs.map(async (brief) => {
+        const feedItem = await ctx.db.get(brief.feedItemId);
+        if (!feedItem) {
+          return {
+            id: brief._id,
+            url: brief.url,
+            title: brief.title,
+            summary: brief.summary,
+            createdAt: new Date(brief._creationTime).toISOString(),
+            topic: null,
+          };
+        }
+
+        const topicFeed = await ctx.db
+          .query('topicFeeds')
+          .withIndex('by_feed', (q) => q.eq('feedId', feedItem.feedId))
+          .first();
+
+        if (!topicFeed) {
+          return {
+            id: brief._id,
+            url: brief.url,
+            title: brief.title,
+            summary: brief.summary,
+            createdAt: new Date(brief._creationTime).toISOString(),
+            topic: null,
+          };
+        }
+
+        const topic = await ctx.db.get(topicFeed.topicId);
+
+        return {
+          id: brief._id,
+          url: brief.url,
+          title: brief.title,
+          summary: brief.summary,
+          createdAt: new Date(brief._creationTime).toISOString(),
+          topic: topic ? { id: topic._id, name: topic.name } : null,
+        };
+      })
+    );
+
+    return briefsWithTopics;
   },
 });

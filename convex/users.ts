@@ -8,7 +8,6 @@ import { internal } from './_generated/api';
 import { MutationCtx, QueryCtx } from './_generated/server';
 import { Id, Doc } from './_generated/dataModel';
 import { WithOptionalSystemFields } from 'convex/server';
-import { internalQuery } from './_generated/server';
 
 export const getCurrentUser = query({
   args: {},
@@ -32,6 +31,7 @@ export const getCurrentUser = query({
         name: preferences?.name || '',
         notifications: preferences?.notifications,
         briefSchedule: preferences?.brief?.schedule,
+        briefStyle: preferences?.brief?.style,
       },
     };
   },
