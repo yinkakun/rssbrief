@@ -8,6 +8,11 @@ import { internal } from './_generated/api';
 import { MutationCtx, QueryCtx } from './_generated/server';
 import { Id, Doc } from './_generated/dataModel';
 import { WithOptionalSystemFields } from 'convex/server';
+import { internalQuery } from './_generated/server';
+import { components } from './_generated/api';
+import { Resend } from '@convex-dev/resend';
+
+const resend: Resend = new Resend(components.resend, {});
 
 export const getCurrentUser = query({
   args: {},
@@ -166,14 +171,61 @@ export const onboardUser = mutation({
   },
 });
 
+export const getWelcomeEmailData = internalQuery({
+  args: { userId: v.id('users') },
+  handler: async (ctx, { userId }) => {
+    const user = await ctx.db.get(userId);
+    const userTopicFeeds = await ctx.db
+      .query('topicFeeds')
+      .withIndex('by_user', (q) => q.eq('userId', userId))
+      .collect();
+
+    const topicNames: string[] = [];
+    for (const topicFeed of userTopicFeeds) {
+      const topic = await ctx.db.get(topicFeed.topicId);
+      if (topic) {
+        topicNames.push(topic.name);
+      }
+    }
+
+    return {
+      email: user?.email,
+      topicNames,
+    };
+  },
+});
+
 export const processPostOnboardingTasks = internalAction({
   args: { userId: v.id('users') },
   handler: async (ctx, { userId }) => {
     console.log(`Processing post-onboarding tasks for user: ${userId}`);
+
+    const userPreferences = await ctx.runQuery(internal.briefs.getUserPreferenceQuery, { userId });
+    const welcomeData = await ctx.runQuery(internal.users.getWelcomeEmailData, { userId });
+
+    if (!welcomeData.email || !userPreferences) {
+      console.error(`User ${userId} missing email or preferences`);
+      return;
+    }
+
     await ctx.runAction(internal.feeds.updateUserFeeds, { userId });
     console.log(`Feed update completed for user: ${userId}`);
-    await ctx.runAction(internal.briefs.updateUserBriefs, { userId });
-    console.log(`Briefs update completed for user: ${userId}`);
-    // todo: send welcome email with briefs
+
+    const processedBriefs = await ctx.runAction(internal.briefs.updateUserBriefs, { userId });
+    console.log(`Briefs update completed for user: ${userId}, processed ${processedBriefs.length} briefs`);
+
+    // TODO - Send welcome email with brief content
+    const emailId = await resend.sendEmail(ctx, {
+      to: welcomeData.email,
+      from: `RSSBrief <onboarding@resend.dev>`,
+      subject: `🎉 Welcome to RSSBrief, ${userPreferences.name}! Here is your first brief!`,
+      text: '',
+    });
+
+    if (emailId) {
+      console.log(`Welcome email sent successfully to user ${userId}`);
+    } else {
+      console.error(`Failed to send welcome email to user ${userId}`);
+    }
   },
 });
