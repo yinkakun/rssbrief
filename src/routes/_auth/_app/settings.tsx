@@ -3,16 +3,24 @@ import { createFileRoute } from '@tanstack/react-router';
 import { Input } from '@/ui/input';
 import { Switch } from '@/ui/switch';
 import { Button } from '@/ui/button';
+import { Spinner } from '@/ui/spinner';
 import { RadioGroup, RadioGroupItem } from '@/ui/radio';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/ui/select';
 
 import { api } from 'convex/_generated/api';
 import { useMutation } from '@tanstack/react-query';
-import { useConvexMutation } from '@convex-dev/react-query';
-import { useQuery } from '@tanstack/react-query';
-import { convexQuery } from '@convex-dev/react-query';
+import { useConvexMutation, useConvexQuery } from '@convex-dev/react-query';
+
+import timezones from 'timezones-list';
+
+import { z } from 'zod/v4';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useForm, Controller } from 'react-hook-form';
+import { useEffect } from 'react';
 
 import { toast } from '@/ui/toaster';
+
+import { HOURS, DAYS } from '@/lib/constants';
 
 export const Route = createFileRoute('/_auth/_app/settings')({
   component: RouteComponent,
@@ -33,51 +41,46 @@ function RouteComponent() {
   );
 }
 
-const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-const HOURS = [
-  '12:00 AM',
-  '1:00 AM',
-  '2:00 AM',
-  '3:00 AM',
-  '4:00 AM',
-  '5:00 AM',
-  '6:00 AM',
-  '7:00 AM',
-  '8:00 AM',
-  '9:00 AM',
-  '10:00 AM',
-  '11:00 AM',
-  '12:00 PM',
-  '1:00 PM',
-  '2:00 PM',
-  '3:00 PM',
-  '4:00 PM',
-  '5:00 PM',
-  '6:00 PM',
-  '7:00 PM',
-  '8:00 PM',
-  '9:00 PM',
-  '10:00 PM',
-  '11:00 PM',
-] as const;
+const accountFormSchema = z.object({
+  name: z.string().min(1, 'First name is required').max(100, 'First name must be 100 characters or less'),
+});
 
-const TIME_ZONES = [
-  { label: 'UTC', value: 'UTC' },
-  { label: 'GMT', value: 'GMT' },
-  { label: 'EST', value: 'EST' },
-  { label: 'CST', value: 'CST' },
-  { label: 'MST', value: 'MST' },
-  { label: 'PST', value: 'PST' },
-];
+type AccountFormValues = z.infer<typeof accountFormSchema>;
 
 const SUMMARY_STYLES = [
   { label: 'Concise', value: 'concise', description: 'Straight to the point 1-2 summary of the entry' },
   { label: 'Detailed', value: 'detailed', description: 'A more detailed summary with key points' },
-];
+] as const;
 
 const AccountSettings = () => {
+  const userPreferencesQuery = useConvexQuery(api.users.getCurrentUser, {});
+
+  const form = useForm<AccountFormValues>({
+    resolver: zodResolver(accountFormSchema),
+  });
+
+  const accountMutation = useMutation({
+    mutationFn: useConvexMutation(api.users.updateUserPreferences),
+    onSuccess: () => {
+      toast({ title: 'Account settings updated successfully!' });
+    },
+    onError: (error) => {
+      toast({ title: 'Error updating account settings', description: error.message });
+    },
+  });
+
+  const onSubmit = (data: AccountFormValues) => {
+    console.log('Submitting account settings:', data);
+    accountMutation.mutate({
+      name: data.name,
+    });
+  };
+
   return (
-    <div className="flex w-full flex-col gap-8 rounded-2xl border border-black/5 bg-white">
+    <form
+      onSubmit={form.handleSubmit(onSubmit)}
+      className="flex w-full flex-col gap-8 rounded-2xl border border-black/5 bg-white"
+    >
       <div className="px-4 pt-2">
         <h2 className="text-lg text-slate-950">Account</h2>
       </div>
@@ -86,27 +89,90 @@ const AccountSettings = () => {
         <label htmlFor="name" className="text-sm font-medium text-slate-950">
           Display Name
         </label>
-        <Input id="name" />
+        <Input defaultValue={userPreferencesQuery?.preferences.name} formNoValidate {...form.register('name')} />
       </div>
 
       <div className="flex w-full items-center justify-end border-t border-slate-100 p-4">
         <Button
+          type="submit"
           variant="outline"
           className="ml-auto w-full max-w-[100px]"
-          onClick={() => {
-            toast({ title: 'Settings saved successfully!' });
-          }}
+          disabled={accountMutation.isPending}
         >
-          Save
+          {accountMutation.isPending ? <Spinner color="black" /> : 'Save'}
         </Button>
       </div>
-    </div>
+    </form>
   );
 };
 
+const briefsFormSchema = z.object({
+  hour: z.number().min(0, 'Hour is required'),
+  dayOfWeek: z.number().min(0, 'Day of week is required'),
+  timezone: z.string().min(1, 'Preferred timezone is required'),
+  style: z.enum(SUMMARY_STYLES.map((style) => style.value)),
+});
+
 const BriefsSettings = () => {
+  const userPreferencesQuery = useConvexQuery(api.users.getCurrentUser, {});
+
+  const userPreferences = userPreferencesQuery?.preferences;
+
+  const form = useForm({
+    resolver: zodResolver(briefsFormSchema),
+    defaultValues: {
+      hour: 0,
+      dayOfWeek: 0,
+      timezone: timezones[0].tzCode,
+      style: 'concise' as const,
+    },
+  });
+
+  useEffect(() => {
+    if (userPreferences) {
+      form.reset({
+        hour: userPreferences.briefSchedule?.hour ?? 0,
+        dayOfWeek: userPreferences.briefSchedule?.dayOfWeek ?? 0,
+        timezone: userPreferences.briefSchedule?.timezone ?? timezones[0].tzCode,
+        style: userPreferences.briefStyle ?? 'concise',
+      });
+    }
+  }, [userPreferencesQuery?.preferences]);
+
+  const updatePreferencesMutation = useMutation({
+    mutationFn: useConvexMutation(api.users.updateUserPreferences),
+    onSuccess: () => {
+      toast({ title: 'Briefs settings updated successfully!' });
+    },
+    onError: (error) => {
+      toast({ title: 'Error updating briefs settings', description: error.message });
+    },
+  });
+
+  const onSubmit = (data: z.infer<typeof briefsFormSchema>) => {
+    console.log('Submitting briefs settings:', data);
+    updatePreferencesMutation.mutate({
+      brief: {
+        schedule: {
+          hour: data.hour,
+          timezone: data.timezone,
+          dayOfWeek: data.dayOfWeek,
+        },
+        style: data.style,
+      },
+    });
+  };
+
+  const onInvalidSubmit = () => {
+    const errors = form.formState.errors;
+    console.log('Form errors:', errors);
+  };
+
   return (
-    <div className="flex w-full flex-col gap-8 rounded-2xl border border-black/5 bg-white">
+    <form
+      onSubmit={form.handleSubmit(onSubmit, onInvalidSubmit)}
+      className="flex w-full flex-col gap-8 rounded-2xl border border-black/5 bg-white"
+    >
       <div className="px-4 py-2">
         <h2 className="text-lg">Briefs</h2>
       </div>
@@ -116,103 +182,141 @@ const BriefsSettings = () => {
           Day of Week
         </label>
         <div className="flex items-center gap-4">
-          <RadioGroup className="flex w-full items-center justify-around">
-            {DAYS.map((day) => {
-              const id = `day-${day.toLowerCase()}`;
-              return (
-                <label
-                  key={day}
-                  className="flex w-full items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-center hover:bg-slate-100"
-                >
-                  <RadioGroupItem value={day} id={id} />
-                  <span className="text-xs">{day}</span>
-                </label>
-              );
-            })}
-          </RadioGroup>
+          <Controller
+            name="dayOfWeek"
+            control={form.control}
+            render={({ field }) => (
+              <RadioGroup
+                value={field.value.toString()}
+                onValueChange={(value) => field.onChange(Number(value))}
+                className="flex w-full items-center justify-around"
+              >
+                {DAYS.map((day) => (
+                  <label
+                    key={day.value}
+                    className="flex w-full items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-center hover:bg-slate-100"
+                  >
+                    <RadioGroupItem
+                      defaultValue={userPreferences?.briefSchedule?.dayOfWeek?.toString()}
+                      value={day.value.toString()}
+                      id={`day-${day.value}`}
+                    />
+                    <span className="text-xs">{day.label}</span>
+                  </label>
+                ))}
+              </RadioGroup>
+            )}
+          />
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4 px-4">
         <div className="flex flex-col gap-2">
-          <label htmlFor="preferred-hour" className="text-sm font-medium text-slate-950">
-            Hour
-          </label>
-          <Select>
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select hour" />
-            </SelectTrigger>
-            <SelectContent className="max-h-[250px]">
-              <SelectGroup>
-                {HOURS.map((hour) => (
-                  <SelectItem key={hour} value={hour}>
-                    {hour}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+          <label className="text-sm font-medium text-slate-950">Hour</label>
+
+          <Controller
+            name="hour"
+            control={form.control}
+            render={({ field }) => (
+              <Select onValueChange={(value) => field.onChange(Number(value))} value={field.value.toString()}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select hour" />
+                </SelectTrigger>
+                <SelectContent className="max-h-[250px]">
+                  <SelectGroup>
+                    {HOURS.map(({ label, value }) => (
+                      <SelectItem key={value} value={value.toString()}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            )}
+          />
         </div>
 
         <div className="flex flex-col gap-2">
           <label htmlFor="preferred-timezone" className="text-sm font-medium text-slate-950">
             Time Zone
           </label>
-          <Select>
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select a time zone" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {TIME_ZONES.map((tz) => (
-                  <SelectItem key={tz.value} value={tz.value}>
-                    {tz.label}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+          <Controller
+            name="timezone"
+            control={form.control}
+            render={({ field }) => (
+              <Select value={field.value} onValueChange={field.onChange}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a time zone" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {timezones.map((tz) => (
+                      <SelectItem key={tz.tzCode} value={tz.tzCode}>
+                        {tz.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            )}
+          />
         </div>
       </div>
 
       <div className="px-4">
         <div className="flex flex-col gap-2">
           <label className="text-sm font-medium text-slate-950">Style</label>
-          <RadioGroup className="grid grid-cols-2 gap-3">
-            {SUMMARY_STYLES.map((style) => (
-              <label
-                key={style.value}
-                className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-3 hover:bg-slate-100"
+          <Controller
+            name="style"
+            control={form.control}
+            render={({ field }) => (
+              <RadioGroup
+                value={field.value}
+                onValueChange={field.onChange}
+                className="grid grid-cols-2 gap-3"
+                defaultValue={userPreferences?.briefStyle}
               >
-                <div className="flex items-center gap-3">
-                  <RadioGroupItem value={style.value} id={`style-${style.value}`} />
-                  <div className="flex flex-col">
-                    <span className="text-sm text-slate-950">{style.label}</span>
-                    <span className="text-xs text-slate-600">{style.description}</span>
-                  </div>
-                </div>
-              </label>
-            ))}
-          </RadioGroup>
+                {SUMMARY_STYLES.map((style) => (
+                  <label
+                    key={style.value}
+                    className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-3 hover:bg-slate-100"
+                  >
+                    <div className="flex items-center gap-3">
+                      <RadioGroupItem value={style.value} id={`style-${style.value}`} />
+                      <div className="flex flex-col">
+                        <span className="text-sm text-slate-950">{style.label}</span>
+                        <span className="text-xs text-slate-600">{style.description}</span>
+                      </div>
+                    </div>
+                  </label>
+                ))}
+              </RadioGroup>
+            )}
+          />
         </div>
       </div>
 
-      <div className="flex flex-col gap-2 px-4">
+      {/* <div className="flex flex-col gap-2 px-4">
         <h2 className="text-sm font-medium text-slate-950">Notifications</h2>
         <div className="flex w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
           <label htmlFor="name" className="text-sm text-slate-950">
             Email
           </label>
 
-          <Switch id="enable-notifications" />
+          <Switch id="enable-notifications" {...form.register('')} />
         </div>
-      </div>
+      </div> */}
 
       <div className="flex w-full items-center justify-end border-t border-slate-100 p-4">
-        <Button variant="outline" className="ml-auto w-full max-w-[100px]">
-          Save
+        <Button
+          type="submit"
+          variant="outline"
+          className="w-full max-w-[100px]"
+          disabled={updatePreferencesMutation.isPending}
+        >
+          {updatePreferencesMutation.isPending ? <Spinner color="black" /> : 'Save'}
         </Button>
       </div>
-    </div>
+    </form>
   );
 };
