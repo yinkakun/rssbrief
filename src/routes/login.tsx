@@ -119,7 +119,7 @@ const VerifyCode = () => {
     },
   });
 
-  const getUserQuery = useQuery({ ...convexQuery(api.users.getCurrentUser, {}), enabled: false });
+  const currentUserQuery = useQuery({ ...convexQuery(api.users.getCurrentUser, {}), enabled: false });
 
   const verifyCodeMutation = useMutation({
     mutationFn: async ({ code }: OtpForm) => {
@@ -139,7 +139,7 @@ const VerifyCode = () => {
   const onSubmit = (data: OtpForm) => {
     verifyCodeMutation.mutate(data, {
       onSuccess: () => {
-        getUserQuery.refetch().then((result) => {
+        currentUserQuery.refetch().then((result) => {
           if (result.data) {
             const { onboarded } = result.data;
             if (onboarded) {
@@ -187,9 +187,9 @@ const VerifyCode = () => {
             type="submit"
             formNoValidate
             className="w-full"
-            disabled={verifyCodeMutation.isPending || getUserQuery.isFetching}
+            disabled={verifyCodeMutation.isPending || currentUserQuery.isFetching}
           >
-            {verifyCodeMutation.isPending || getUserQuery.isFetching ? <Spinner /> : 'Verify Code'}
+            {verifyCodeMutation.isPending || currentUserQuery.isFetching ? <Spinner /> : 'Verify Code'}
           </Button>
         </div>
       </form>

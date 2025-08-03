@@ -6,6 +6,12 @@ import { Button } from '@/ui/button';
 import { RadioGroup, RadioGroupItem } from '@/ui/radio';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/ui/select';
 
+import { api } from 'convex/_generated/api';
+import { useMutation } from '@tanstack/react-query';
+import { useConvexMutation } from '@convex-dev/react-query';
+import { useQuery } from '@tanstack/react-query';
+import { convexQuery } from '@convex-dev/react-query';
+
 import { toast } from '@/ui/toaster';
 
 export const Route = createFileRoute('/_auth/_app/settings')({
@@ -53,7 +59,7 @@ const HOURS = [
   '9:00 PM',
   '10:00 PM',
   '11:00 PM',
-];
+] as const;
 
 const TIME_ZONES = [
   { label: 'UTC', value: 'UTC' },
@@ -67,19 +73,6 @@ const TIME_ZONES = [
 const SUMMARY_STYLES = [
   { label: 'Concise', value: 'concise', description: 'Straight to the point 1-2 summary of the entry' },
   { label: 'Detailed', value: 'detailed', description: 'A more detailed summary with key points' },
-];
-
-const LANGUAGES = [
-  { label: 'English', value: 'en' },
-  { label: 'Spanish', value: 'es' },
-  { label: 'French', value: 'fr' },
-  { label: 'German', value: 'de' },
-  { label: 'Italian', value: 'it' },
-  { label: 'Portuguese', value: 'pt' },
-  { label: 'Chinese (Simplified)', value: 'zh-cn' },
-  { label: 'Japanese', value: 'ja' },
-  { label: 'Korean', value: 'ko' },
-  { label: 'Dutch', value: 'nl' },
 ];
 
 const AccountSettings = () => {
@@ -201,30 +194,6 @@ const BriefsSettings = () => {
               </label>
             ))}
           </RadioGroup>
-        </div>
-      </div>
-
-      <div className="px-4">
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-2">
-            <label htmlFor="translation-language" className="text-sm font-medium text-slate-950">
-              Translation
-            </label>
-            <Select>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select target language" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {LANGUAGES.map((lang) => (
-                    <SelectItem key={lang.value} value={lang.value}>
-                      {lang.label}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
         </div>
       </div>
 

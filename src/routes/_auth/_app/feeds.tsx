@@ -1,24 +1,32 @@
 import { createFileRoute } from '@tanstack/react-router';
 
+import { api } from 'convex/_generated/api';
+import { useMutation } from '@tanstack/react-query';
+import { useConvexMutation } from '@convex-dev/react-query';
+import { useQuery } from '@tanstack/react-query';
+import { convexQuery } from '@convex-dev/react-query';
+
 export const Route = createFileRoute('/_auth/_app/feeds')({
   component: RouteComponent,
 });
 
 function RouteComponent() {
+  const userBriefsQuery = useQuery(convexQuery(api.briefs.getUserBriefs, {}));
+
   return (
     <div className="flex h-full flex-col gap-4">
       <div>
-        <h2 className="text-2xl text-slate-900">Feeds</h2>
+        <h2 className="text-2xl text-slate-900">Briefs</h2>
       </div>
 
       <div className="flex h-full divide-x divide-black/5 overflow-hidden rounded-2xl border border-black/5 bg-white">
         <div className="basis-[300px]">
           <div className="flex flex-col divide-y divide-black/50">
-            {MOCK_FEEDS.map((feed, index) => (
-              <div key={index} className="flex flex-col gap-0.5 border-black/5 px-4 py-3 hover:bg-gray-50">
+            {userBriefsQuery.data?.map((brief) => (
+              <div key={brief.id} className="flex flex-col gap-0.5 border-black/5 px-4 py-3 hover:bg-gray-50">
                 <span className="mt-2 block text-xs text-slate-500">2 day ago</span>
-                <h3 className="text-base text-slate-900">{feed.title}</h3>
-                <p className="mt-1 max-w-xs truncate text-xs text-slate-600">{feed.excerpt}</p>
+                <h3 className="text-sm text-slate-900">{brief.title}</h3>
+                <p className="mt-1 max-w-xs truncate text-xs text-slate-600">{brief.summary.slice(0, 50)}</p>
               </div>
             ))}
           </div>

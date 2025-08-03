@@ -3,10 +3,12 @@ import { cn } from '@/lib/utils';
 import { atom, useAtom } from 'jotai';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createFileRoute } from '@tanstack/react-router';
-
+import type { Id } from 'convex/_generated/dataModel';
 import { motion } from 'motion/react';
 import { Link } from '@tanstack/react-router';
 import { useForm, Controller } from 'react-hook-form';
+
+import { HOURS, DAYS } from '@/lib/constants';
 
 import { Input } from '@/ui/input';
 import { Button } from '@/ui/button';
@@ -16,18 +18,23 @@ import { RadioGroup, RadioGroupItem } from '@/ui/radio';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/ui/select';
 
 import { PiCheck, PiCheckCircle, PiPlus } from 'react-icons/pi';
+import { api } from 'convex/_generated/api';
+import { useMutation } from '@tanstack/react-query';
+import { useConvexMutation } from '@convex-dev/react-query';
+import { useQuery } from '@tanstack/react-query';
+import { convexQuery } from '@convex-dev/react-query';
 
 const nameSchema = z.object({
   name: z.string().min(1, 'First name is required').max(100, 'First name must be 100 characters or less'),
 });
 
 const topicsSchema = z.object({
-  topics: z.array(z.string()).min(3, 'Select at least 3 topics'),
+  topics: z.array(z.string()).min(1, 'Select at least one topic'),
 });
 
 const briefTimingSchema = z.object({
-  hour: z.string().min(1, 'Please select an hour'),
-  dayOfWeek: z.string().min(1, 'Please select a day'),
+  hour: z.number().min(0, 'Please select an hour'),
+  dayOfWeek: z.number().min(0, 'Please select preferred day'),
 });
 
 const formSchema = z.object({
@@ -52,6 +59,9 @@ const useFormData = () => {
 
 export const Route = createFileRoute('/_auth/onboarding')({
   component: RouteComponent,
+  beforeLoad: async ({ context }) => {
+    await context.queryClient.ensureQueryData(convexQuery(api.topics.getCuratedTopics, { limit: 9 }));
+  },
 });
 
 function RouteComponent() {
@@ -68,46 +78,6 @@ function RouteComponent() {
     </div>
   );
 }
-
-const POPULAR_TOPICS = [
-  { id: 'technology', label: 'Technology', description: 'Latest tech news and innovations' },
-  { id: 'business', label: 'Business', description: 'Market trends and business insights' },
-  { id: 'science', label: 'Science', description: 'Scientific discoveries and research' },
-  { id: 'health', label: 'Health', description: 'Health and wellness updates' },
-  { id: 'sports', label: 'Sports', description: 'Sports news and highlights' },
-  { id: 'entertainment', label: 'Entertainment', description: 'Movies, TV, and celebrity news' },
-  { id: 'finance', label: 'Finance', description: 'Financial markets and investing' },
-  { id: 'travel', label: 'Travel', description: 'Travel guides and destinations' },
-  { id: 'food', label: 'Food', description: 'Recipes and culinary trends' },
-];
-
-const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-const HOURS = [
-  '12:00 AM',
-  '1:00 AM',
-  '2:00 AM',
-  '3:00 AM',
-  '4:00 AM',
-  '5:00 AM',
-  '6:00 AM',
-  '7:00 AM',
-  '8:00 AM',
-  '9:00 AM',
-  '10:00 AM',
-  '11:00 AM',
-  '12:00 PM',
-  '1:00 PM',
-  '2:00 PM',
-  '3:00 PM',
-  '4:00 PM',
-  '5:00 PM',
-  '6:00 PM',
-  '7:00 PM',
-  '8:00 PM',
-  '9:00 PM',
-  '10:00 PM',
-  '11:00 PM',
-];
 
 const NameStep = () => {
   const { formData, updateFormData } = useFormData();
@@ -155,6 +125,8 @@ const TopicsStep = () => {
   const { formData, updateFormData } = useFormData();
   const { activeStepIndex, totalSteps, nextStep } = useStepper();
 
+  const curatedTopicsQuery = useQuery(convexQuery(api.topics.getCuratedTopics, { limit: 9 }));
+
   const form = useForm<z.infer<typeof topicsSchema>>({
     resolver: zodResolver(topicsSchema),
     defaultValues: { topics: formData.topics || [] },
@@ -184,14 +156,14 @@ const TopicsStep = () => {
 
       <form className="flex w-full flex-col gap-6" onSubmit={form.handleSubmit(onSubmit)}>
         <div className="grid grid-cols-3 gap-3">
-          {POPULAR_TOPICS.map((topic) => {
-            const isSelected = selectedTopics.includes(topic.id);
+          {curatedTopicsQuery.data?.map(({ id, name }) => {
+            const isSelected = selectedTopics.includes(id);
 
             return (
               <button
                 type="button"
-                key={topic.id}
-                onClick={() => toggleTopic(topic.id)}
+                key={id}
+                onClick={() => toggleTopic(id)}
                 className={cn(
                   'flex flex-col gap-1 rounded-xl border border-slate-200 p-3 text-left transition-colors hover:bg-slate-50',
                   isSelected ? 'bg-slate-100' : 'bg-white',
@@ -204,7 +176,7 @@ const TopicsStep = () => {
                     <PiPlus size={20} className="shrink-0 text-slate-500" />
                   )}
 
-                  <span className="text-xs text-slate-950">{topic.label}</span>
+                  <span className="text-xs text-slate-950 capitalize">{name}</span>
                 </div>
               </button>
             );
@@ -224,21 +196,39 @@ const TopicsStep = () => {
 };
 
 const BriefTimingStep = () => {
-  const { formData, updateFormData } = useFormData();
+  const { formData } = useFormData();
   const { activeStepIndex, totalSteps, nextStep } = useStepper();
 
   const form = useForm<z.infer<typeof briefTimingSchema>>({
     resolver: zodResolver(briefTimingSchema),
     defaultValues: {
-      hour: formData.hour || '',
-      dayOfWeek: formData.dayOfWeek || '',
+      hour: formData.hour ?? 0,
+      dayOfWeek: formData.dayOfWeek ?? 0,
+    },
+  });
+
+  const onboardUserMutation = useMutation({
+    mutationFn: useConvexMutation(api.users.onboardUser),
+    onSuccess: () => {
+      nextStep();
     },
   });
 
   const onSubmit = (data: z.infer<typeof briefTimingSchema>) => {
-    console.log('Form Data:', data);
-    updateFormData(data);
-    nextStep();
+    const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+    onboardUserMutation.mutate({
+      name: formData.name ?? 'Anonymous',
+      topicsToFollow: formData.topics as Id<'topics'>[],
+      brief: {
+        style: 'concise',
+        schedule: {
+          hour: data.hour,
+          timezone: userTimezone,
+          dayOfWeek: data.dayOfWeek,
+        },
+      },
+    });
   };
 
   return (
@@ -257,17 +247,23 @@ const BriefTimingStep = () => {
             name="dayOfWeek"
             control={form.control}
             render={({ field }) => (
-              <RadioGroup value={field.value} onValueChange={field.onChange} className="grid grid-cols-4 gap-4">
+              <RadioGroup
+                value={field.value.toString()}
+                onValueChange={(value) => {
+                  field.onChange(Number(value));
+                }}
+                className="grid grid-cols-4 gap-4"
+              >
                 {DAYS.map((day) => (
                   <label
-                    key={day}
+                    key={day.value}
                     className={cn(
                       'flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-center hover:bg-slate-100',
-                      field.value === day && 'border-slate-300 bg-slate-100',
+                      field.value === day.value && 'border-slate-300 bg-slate-100',
                     )}
                   >
-                    <RadioGroupItem value={day} id={`day-${day.toLowerCase()}`} />
-                    <span className="text-xs">{day.slice(0, 300)}</span>
+                    <RadioGroupItem value={day.value.toString()} id={`day-${day.value}`} />
+                    <span className="text-xs">{day.label}</span>
                   </label>
                 ))}
               </RadioGroup>
@@ -278,7 +274,6 @@ const BriefTimingStep = () => {
           )}
         </div>
 
-        {/* Time and Timezone */}
         <div className="grid grid-cols-1 gap-4">
           <div className="flex flex-col gap-2">
             <label className="text-sm font-medium text-slate-950">Hour</label>
@@ -286,15 +281,15 @@ const BriefTimingStep = () => {
               name="hour"
               control={form.control}
               render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
+                <Select value={field.value.toString()} onValueChange={(value) => field.onChange(Number(value))}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select hour" />
                   </SelectTrigger>
                   <SelectContent className="max-h-[250px]">
                     <SelectGroup>
-                      {HOURS.map((hour) => (
-                        <SelectItem key={hour} value={hour}>
-                          {hour}
+                      {HOURS.map(({ label, value }) => (
+                        <SelectItem key={value} value={value.toString()}>
+                          {label}
                         </SelectItem>
                       ))}
                     </SelectGroup>
@@ -308,8 +303,12 @@ const BriefTimingStep = () => {
           </div>
         </div>
 
-        <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
-          {form.formState.isSubmitting ? <Spinner /> : 'Continue'}
+        <Button
+          type="submit"
+          className="w-full"
+          disabled={onboardUserMutation.isPending || form.formState.isSubmitting}
+        >
+          {onboardUserMutation.isPending ? <Spinner /> : 'Complete'}
         </Button>
       </form>
     </div>

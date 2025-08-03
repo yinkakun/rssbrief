@@ -3,6 +3,11 @@ import { createFileRoute } from '@tanstack/react-router';
 import { type IconType } from 'react-icons';
 import { type RegisteredRouter, Outlet, Link } from '@tanstack/react-router';
 
+import { api } from 'convex/_generated/api';
+import { useQuery } from '@tanstack/react-query';
+import { convexQuery } from '@convex-dev/react-query';
+import { useAuthActions } from '@convex-dev/auth/react';
+
 import { PiGearFine } from 'react-icons/pi';
 import { VscMapVertical, VscVersions, VscSymbolNumeric } from 'react-icons/vsc';
 
@@ -14,6 +19,11 @@ export const Route = createFileRoute('/_auth/_app')({
 
 function RouteComponent() {
   // fetch current user here, redirect to onboarding if not onboarded
+
+  const currentUserQuery = useQuery({ ...convexQuery(api.users.getCurrentUser, {}) });
+
+  console.log('Current user:', currentUserQuery.data);
+
   return (
     <div className="flex h-[100dvh] bg-[#F8F8F8]">
       <div className="basis-[20rem] p-6">
@@ -40,12 +50,11 @@ function RouteComponent() {
             })}
           </nav>
 
-          {/* Convert to Favourites */}
           <nav className="flex flex-col gap-3 p-3">
             <div className="flex flex-col gap-2 px-3">
               {TOPICS_FOLLOWED.map((topic, index) => (
                 <div key={index} className="flex items-center gap-2 text-sm">
-                  <div className="size-2 rounded-full bg-black"></div>
+                  <div className="size-2 rounded-full bg-slate-300"></div>
                   <span className="text-sm text-black/70">{topic.title}</span>
                 </div>
               ))}
@@ -81,8 +90,8 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { label: 'Briefs', path: '/briefs', icon: VscVersions },
-  { label: 'Feeds', path: '/feeds', icon: VscMapVertical },
+  // { label: 'Briefs', path: '/briefs', icon: VscVersions },
+  { label: 'Briefs', path: '/feeds', icon: VscMapVertical },
   { label: 'Topics', path: '/topics', icon: VscSymbolNumeric },
   { label: 'Settings', path: '/settings', icon: PiGearFine },
 ];

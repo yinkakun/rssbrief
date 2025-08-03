@@ -21,7 +21,7 @@ function RouteComponent() {
   if (isLoading) {
     return (
       <div className="flex h-dvh items-center justify-center bg-white text-slate-500">
-        <ThreeDotsScale width={50} height={50} color="#000" />
+        <ThreeDotsScale width={50} height={50} />
       </div>
     );
   }
