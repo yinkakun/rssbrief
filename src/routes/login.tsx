@@ -2,12 +2,11 @@ import React from 'react';
 import { z } from 'zod/v4';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, Controller } from 'react-hook-form';
-import { atom, useSetAtom, useAtomValue } from 'jotai';
 
 import { toast } from '@/ui/toaster';
 
 import { useMutation } from '@tanstack/react-query';
-import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router';
 
 import { api } from 'convex/_generated/api';
 import { useQuery } from '@tanstack/react-query';
@@ -20,7 +19,6 @@ import { Spinner } from '@/ui/spinner';
 import { Stepper, useStepper } from '@/ui/stepper';
 import { OtpInput, OtpInputSlot, OtpInputGroup } from '@/ui/otp-input';
 
-const emailAtom = atom('');
 
 const otpSchema = z.object({
   code: z.string().min(1, 'Please enter the verification code'),
@@ -33,8 +31,13 @@ const emailSchema = z.object({
 type OtpForm = z.infer<typeof otpSchema>;
 type EmailForm = z.infer<typeof emailSchema>;
 
+const loginSearchSchema = z.object({
+  email: z.string().optional(),
+});
+
 export const Route = createFileRoute('/login')({
   component: RouteComponent,
+  validateSearch: loginSearchSchema,
 });
 
 function RouteComponent() {
@@ -53,7 +56,7 @@ function RouteComponent() {
 const EmailForm = () => {
   const { signIn } = useAuthActions();
   const { nextStep } = useStepper();
-  const setEmail = useSetAtom(emailAtom);
+  const navigate = useNavigate();
 
   const form = useForm<EmailForm>({
     resolver: zodResolver(emailSchema),
@@ -83,7 +86,10 @@ const EmailForm = () => {
     if (requestCodeMutation.isPending) return;
     requestCodeMutation.mutate(data, {
       onSuccess: () => {
-        setEmail(data.email);
+        navigate({
+          to: '/login',
+          search: { email: data.email },
+        });
         nextStep();
       },
     });
@@ -110,7 +116,8 @@ const EmailForm = () => {
 const VerifyCode = () => {
   const navigate = useNavigate();
   const { signIn } = useAuthActions();
-  const email = useAtomValue(emailAtom);
+  const search = useSearch({ from: '/login' });
+  const email = search.email || '';
 
   const form = useForm<OtpForm>({
     resolver: zodResolver(otpSchema),
