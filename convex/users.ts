@@ -143,10 +143,6 @@ export const onboardUser = mutation({
       throw new ConvexError('User preferences not found');
     }
 
-    if (existingPreferences.onboarded) {
-      throw new ConvexError('User is already onboarded');
-    }
-
     await ctx.db.patch(existingPreferences._id, {
       name: args.name,
       onboarded: true,
