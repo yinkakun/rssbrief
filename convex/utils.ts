@@ -4,6 +4,7 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { ok, fromPromise, fromThrowable } from 'neverthrow';
 import { format } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
+import { Resend as ResendClient } from 'resend';
 import { Id } from './_generated/dataModel';
 
 export interface ProcessingError {
@@ -107,52 +108,6 @@ export const slugify = (str: string): string =>
 
 export const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const formatDateForBrief = (timestamp: number, timezone: string): string => {
-  const zonedDate = toZonedTime(new Date(timestamp), timezone);
-  return format(zonedDate, 'EEEE, MMMM d, yyyy');
-};
-
-export interface BriefTopic {
-  name: string;
-  articles: Array<{
-    title: string;
-    url: string;
-    summary: string;
-    translation?: string;
-  }>;
-}
-
-export interface BriefContent {
-  topics: BriefTopic[];
-  generatedAt: number;
-  userTimezone: string;
-}
-
-export const formatBriefContent = (content: BriefContent): string => {
-  const date = formatDateForBrief(content.generatedAt, content.userTimezone);
-
-  let brief = `# Your Weekly RSS Brief - ${date}\n\n`;
-  brief += `Here's what's been happening in your followed topics:\n\n`;
-
-  for (const topic of content.topics) {
-    brief += `## ${topic.name}\n\n`;
-
-    for (const article of topic.articles) {
-      brief += `### [${article.title}](${article.url})\n`;
-      brief += `${article.summary}\n`;
-
-      if (article.translation) {
-        brief += `\n*Translation: ${article.translation}*\n`;
-      }
-
-      brief += `\n---\n\n`;
-    }
-  }
-
-  brief += `\n*This brief was generated automatically based on your followed topics.*`;
-  return brief;
-};
-
 export const requireAuth = (userId: Id<'users'> | null) => {
   if (userId === null) {
     throw new Error('Not authenticated');
@@ -165,3 +120,30 @@ export const BATCH_CONFIG = {
   DELAY_BETWEEN_BATCHES: 100,
   MAX_CONCURRENCY: 10,
 } as const;
+
+export const safeRunAction = <T>(actionPromise: Promise<T>) =>
+  fromPromise(actionPromise, (error) => ({
+    step: 'action-execution',
+    message: error instanceof Error ? error.message : String(error),
+  }));
+
+type PromptType = 'concise' | 'detailed';
+
+export function createPrompt(text: string, type: PromptType): string {
+  if (!text.trim()) {
+    throw new Error('Input text cannot be empty');
+  }
+
+  const basePrompt = text.trim();
+
+  switch (type) {
+    case 'concise':
+      return `${basePrompt}\n\nPlease provide a concise, focused response. Keep your answer brief and to the point, highlighting only the most essential information.`;
+
+    case 'detailed':
+      return `${basePrompt}\n\nPlease provide a comprehensive, detailed response. Include relevant context, examples, explanations, and thoroughly explore all important aspects of the topic.`;
+
+    default:
+      throw new Error(`Invalid prompt type: ${type}. Must be 'concise' or 'detailed'.`);
+  }
+}
