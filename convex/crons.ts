@@ -3,7 +3,6 @@ import { cronJobs } from 'convex/server';
 
 const crons = cronJobs();
 
-// crons.interval('update feeds', { hours: 1 }, internal.feeds.updateAllFeeds);
-// crons.interval('generate scheduled briefs', { hours: 1 }, internal.briefs.generateScheduledBriefs);
+crons.interval('generate weekly digests', { hours: 1 }, internal.briefs.generateScheduledWeeklyDigests);
 
 export default crons;

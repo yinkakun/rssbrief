@@ -9,8 +9,33 @@ import { getUserPreferences } from './users';
 import { Doc } from './_generated/dataModel';
 import { toZonedTime, fromZonedTime } from 'date-fns-tz';
 import pLimit from 'p-limit';
+import { components } from './_generated/api';
+import { Resend } from '@convex-dev/resend';
 
-import { TIME_CONSTANTS, safeGenerateText, ProcessingError, safeExtractContent } from './utils';
+const resend: Resend = new Resend(components.resend, {});
+
+import {
+  TIME_CONSTANTS,
+  safeGenerateText,
+  ProcessingError,
+  safeExtractContent,
+  safeRunAction,
+  createPrompt,
+} from './utils';
+
+export const getUserData = internalQuery({
+  args: { userId: v.id('users') },
+  handler: async (ctx, { userId }) => {
+    return await ctx.db.get(userId);
+  },
+});
+
+export const getUserPreferenceQuery = internalQuery({
+  args: { userId: v.id('users') },
+  handler: async (ctx, { userId }) => {
+    return await getUserPreferences(ctx, userId);
+  },
+});
 
 function getNextScheduledTime({ dayOfWeek, hour, timezone }: { hour: number; dayOfWeek: number; timezone: string }) {
   const nowInTimezone = toZonedTime(new Date(), timezone);
@@ -56,15 +81,18 @@ interface ProcessedFeedItem {
   summary: string;
 }
 
-const processFeedItem = async (url: string): Promise<Result<ProcessedFeedItem, ProcessingError>> => {
+const processFeedItem = async (
+  url: string,
+  style: 'concise' | 'detailed',
+): Promise<Result<ProcessedFeedItem, ProcessingError>> => {
   const extractContentResult = await safeExtractContent(url);
   if (extractContentResult.isErr()) return err(extractContentResult.error);
 
   const extractedContent = extractContentResult.value.data;
 
-  const summaryResult = await safeGenerateText(
-    `Provide a concise 2-sentence summary of this:\n\n${extractedContent.content}`,
-  );
+  const prompt = createPrompt(extractedContent.content, style);
+
+  const summaryResult = await safeGenerateText(prompt);
   if (summaryResult.isErr()) return err(summaryResult.error);
 
   return ok({
@@ -108,10 +136,57 @@ export const getUserFeedItems = internalQuery({
   },
 });
 
-export const getUserPreferenceQuery = internalQuery({
-  args: { userId: v.id('users') },
-  handler: async (ctx, { userId }) => {
-    return await getUserPreferences(ctx, userId);
+export const getBriefItemsWithTopics = internalQuery({
+  args: {
+    userId: v.id('users'),
+    since: v.optional(v.number()),
+  },
+  handler: async (ctx, { userId, since }) => {
+    let briefsQuery = ctx.db.query('briefItems').withIndex('by_user', (q) => q.eq('userId', userId));
+
+    if (since) {
+      briefsQuery = briefsQuery.filter((q) => q.gt(q.field('_creationTime'), since));
+    }
+
+    const briefs = await briefsQuery.order('desc').collect();
+
+    const feedItemIds = briefs.map((b) => b.feedItemId);
+    const feedItems = await Promise.all(feedItemIds.map((id) => ctx.db.get(id)));
+
+    const feedIds = [...new Set(feedItems.filter(Boolean).map((fi) => fi!.feedId))];
+    const topicFeeds = await Promise.all(
+      feedIds.map((feedId) =>
+        ctx.db
+          .query('topicFeeds')
+          .withIndex('by_feed', (q) => q.eq('feedId', feedId))
+          .first(),
+      ),
+    );
+
+    const topicIds = [...new Set(topicFeeds.filter(Boolean).map((tf) => tf!.topicId))];
+    const topics = await Promise.all(topicIds.map((id) => ctx.db.get(id)));
+
+    const feedItemMap = new Map(feedItems.filter(Boolean).map((fi) => [fi!._id, fi!]));
+    const topicFeedMap = new Map(topicFeeds.filter(Boolean).map((tf) => [tf!.feedId, tf!]));
+    const topicMap = new Map(topics.filter(Boolean).map((t) => [t!._id, t!]));
+
+    return briefs.map((brief) => {
+      const feedItem = feedItemMap.get(brief.feedItemId);
+      const topicFeed = feedItem ? topicFeedMap.get(feedItem.feedId) : null;
+      const topic = topicFeed ? topicMap.get(topicFeed.topicId) : null;
+
+      return {
+        id: brief._id,
+        userId: brief.userId,
+        feedItemId: brief.feedItemId,
+        summary: brief.summary,
+        url: brief.url,
+        title: brief.title,
+        createdAt: brief._creationTime,
+        topicName: topic?.name || 'Unknown',
+        topicId: topic?._id || null,
+      };
+    });
   },
 });
 
@@ -189,7 +264,7 @@ export const updateUserBriefs = internalAction({
     const concurrencyLimit = pLimit(5);
     const processPromises = feedItemsToProcess.map((feedItem) =>
       concurrencyLimit(async () => {
-        const processResult = await processFeedItem(feedItem.url);
+        const processResult = await processFeedItem(feedItem.url, userPreferences.brief.style);
         if (processResult.isErr()) {
           console.warn(`Failed to process feed item ${feedItem.url}:`, processResult.error);
           return null;
@@ -216,9 +291,164 @@ export const updateUserBriefs = internalAction({
   },
 });
 
-export const getUserBriefs = query({
+interface WeeklyDigest {
+  userId: string;
+  totalBriefs: number;
+  topicSummaries: Array<{
+    topicName: string;
+    count: number;
+    topArticles: Array<{
+      title: string;
+      url: string;
+      summary: string;
+    }>;
+  }>;
+  weekPeriod: {
+    start: string;
+    end: string;
+  };
+}
+
+export const generateWeeklyDigest = internalAction({
+  args: { userId: v.id('users') },
+  handler: async (ctx, { userId }) => {
+    const userPreferences = await ctx.runQuery(internal.briefs.getUserPreferenceQuery, { userId });
+    if (!userPreferences || !userPreferences.notifications.email) {
+      return null;
+    }
+
+    const user = await ctx.runQuery(internal.briefs.getUserData, { userId });
+    if (!user?.email) {
+      console.warn(`User ${userId} has no email address`);
+      return null;
+    }
+
+    const oneWeekAgo = Date.now() - TIME_CONSTANTS.ONE_WEEK;
+
+    const briefsWithTopics = await ctx.runQuery(internal.briefs.getBriefItemsWithTopics, {
+      userId,
+      since: oneWeekAgo,
+    });
+
+    const topicGroups = new Map<string, typeof briefsWithTopics>();
+    briefsWithTopics.forEach((brief) => {
+      const topicName = brief.topicName;
+      if (!topicGroups.has(topicName)) {
+        topicGroups.set(topicName, []);
+      }
+      topicGroups.get(topicName)!.push(brief);
+    });
+
+    const maxArticles = userPreferences.brief.style === 'detailed' ? 5 : 1;
+    const topicSummaries = Array.from(topicGroups.entries()).map(([topicName, briefs]) => ({
+      topicName,
+      count: briefs.length,
+      topArticles: briefs
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .slice(0, maxArticles)
+        .map((brief) => ({
+          url: brief.url,
+          title: brief.title,
+          summary: brief.summary,
+        })),
+    }));
+
+    const weekStart = new Date(oneWeekAgo).toISOString().split('T')[0];
+    const weekEnd = new Date().toISOString().split('T')[0];
+
+    const digest: WeeklyDigest = {
+      userId,
+      totalBriefs: briefsWithTopics.length,
+      topicSummaries,
+      weekPeriod: {
+        start: weekStart,
+        end: weekEnd,
+      },
+    };
+
+    // TODO: Format the digest content as needed
+    const emailId = await resend.sendEmail(ctx, {
+      to: user.email,
+      from: `RSSBrief <onboarding@resend.dev>`,
+      subject: `Your Weekly RSSBrief Digest (${weekStart} - ${weekEnd})`,
+      text: 'Digest content here',
+    });
+
+    if (!emailId) {
+      console.error(`Failed to send weekly digest email to user ${userId}`);
+      return null;
+    }
+
+    console.log(`Weekly digest email sent successfully to user ${userId}`);
+    return digest;
+  },
+});
+
+export const getUsersNeedingWeeklyDigest = internalQuery({
   args: {},
   handler: async (ctx) => {
+    const currentTime = new Date();
+    const currentHour = currentTime.getUTCHours();
+    const currentDay = currentTime.getUTCDay();
+
+    const preferences = await ctx.db
+      .query('preferences')
+      .withIndex('by_brief_schedule', (q) =>
+        q.eq('brief.schedule.hour', currentHour).eq('brief.schedule.dayOfWeek', currentDay),
+      )
+      .filter((q) => q.and(q.eq(q.field('onboarded'), true), q.eq(q.field('notifications.email'), true)))
+      .collect();
+
+    return preferences.map((pref) => ({
+      userId: pref.userId,
+      timezone: pref.brief.schedule.timezone,
+    }));
+  },
+});
+
+export const generateScheduledWeeklyDigests = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    const usersNeedingDigests = await ctx.runQuery(internal.briefs.getUsersNeedingWeeklyDigest, {});
+
+    console.log(`Found ${usersNeedingDigests.length} users needing weekly digests`);
+
+    const concurrencyLimit = pLimit(3);
+    const digestPromises = usersNeedingDigests.map(({ userId }) =>
+      concurrencyLimit(async () => {
+        const result = await safeRunAction(ctx.runAction(internal.briefs.generateWeeklyDigest, { userId }));
+
+        if (result.isErr()) {
+          console.error(`Failed to generate weekly digest for user ${userId}:`, result.error);
+          return null;
+        }
+
+        const digest = result.value;
+        if (digest) {
+          console.log(`Successfully generated weekly digest for user ${userId}`);
+        }
+        return digest;
+      }),
+    );
+
+    const results = await Promise.all(digestPromises);
+    const successCount = results.filter((result) => result !== null).length;
+    console.log(`Generated ${successCount} weekly digests out of ${usersNeedingDigests.length} users`);
+  },
+});
+
+interface UserBrief {
+  id: string;
+  url: string;
+  title: string;
+  summary: string;
+  createdAt: string;
+  topic: { id: string; name: string } | null;
+}
+
+export const getUserBriefs = query({
+  args: {},
+  handler: async (ctx): Promise<UserBrief[]> => {
     const userId = requireAuth(await getAuthUserId(ctx));
     const userPreferences = await getUserPreferences(ctx, userId);
 
@@ -226,55 +456,15 @@ export const getUserBriefs = query({
       return [];
     }
 
-    const briefs = await ctx.db
-      .query('briefItems')
-      .withIndex('by_user', (q) => q.eq('userId', userId))
-      .order('desc')
-      .collect();
+    const briefsWithTopics = await ctx.runQuery(internal.briefs.getBriefItemsWithTopics, { userId });
 
-    const briefsWithTopics = await Promise.all(
-      briefs.map(async (brief) => {
-        const feedItem = await ctx.db.get(brief.feedItemId);
-        if (!feedItem) {
-          return {
-            id: brief._id,
-            url: brief.url,
-            title: brief.title,
-            summary: brief.summary,
-            createdAt: new Date(brief._creationTime).toISOString(),
-            topic: null,
-          };
-        }
-
-        const topicFeed = await ctx.db
-          .query('topicFeeds')
-          .withIndex('by_feed', (q) => q.eq('feedId', feedItem.feedId))
-          .first();
-
-        if (!topicFeed) {
-          return {
-            id: brief._id,
-            url: brief.url,
-            title: brief.title,
-            summary: brief.summary,
-            createdAt: new Date(brief._creationTime).toISOString(),
-            topic: null,
-          };
-        }
-
-        const topic = await ctx.db.get(topicFeed.topicId);
-
-        return {
-          id: brief._id,
-          url: brief.url,
-          title: brief.title,
-          summary: brief.summary,
-          createdAt: new Date(brief._creationTime).toISOString(),
-          topic: topic ? { id: topic._id, name: topic.name } : null,
-        };
-      })
-    );
-
-    return briefsWithTopics;
+    return briefsWithTopics.map((brief) => ({
+      id: brief.id,
+      url: brief.url,
+      title: brief.title,
+      summary: brief.summary,
+      createdAt: new Date(brief.createdAt).toISOString(),
+      topic: brief.topicId ? { id: brief.topicId, name: brief.topicName } : null,
+    }));
   },
 });
