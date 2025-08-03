@@ -1,5 +1,5 @@
 import { v } from 'convex/values';
-import { query, mutation } from './_generated/server';
+import { query, mutation, internalAction } from './_generated/server';
 import { getAuthUserId } from '@convex-dev/auth/server';
 import { requireAuth } from './utils';
 import { ConvexError } from 'convex/values';
@@ -158,10 +158,22 @@ export const onboardUser = mutation({
       });
     }
 
-    await ctx.scheduler.runAfter(0, internal.feeds.updateUserFeeds, {
+    await ctx.scheduler.runAfter(0, internal.users.processPostOnboardingTasks, {
       userId,
     });
 
     return existingPreferences._id;
+  },
+});
+
+export const processPostOnboardingTasks = internalAction({
+  args: { userId: v.id('users') },
+  handler: async (ctx, { userId }) => {
+    console.log(`Processing post-onboarding tasks for user: ${userId}`);
+    await ctx.runAction(internal.feeds.updateUserFeeds, { userId });
+    console.log(`Feed update completed for user: ${userId}`);
+    await ctx.runAction(internal.briefs.updateUserBriefs, { userId });
+    console.log(`Briefs update completed for user: ${userId}`);
+    // todo: send welcome email with briefs
   },
 });
