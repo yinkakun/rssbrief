@@ -4,7 +4,7 @@ import { Slot } from '@radix-ui/react-slot';
 import { cva, type VariantProps } from 'class-variance-authority';
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-medium transition-all disabled:pointer-events-none disabled:bg-slate-900/90 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-slate-50 focus-visible:ring-slate-400/50 focus-visible:ring-[3px] aria-invalid:ring-red-500/20 aria-invalid:border-red-500",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-medium transition-all disabled:pointer-events-none disabled:bg-slate-900/10 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none aria-invalid:ring-red-500/20 aria-invalid:border-red-500",
   {
     variants: {
       variant: {
@@ -13,7 +13,7 @@ const buttonVariants = cva(
         default: 'bg-black text-slate-50 hover:text-slate-200',
         secondary: 'bg-slate-100 text-slate-600 hover:bg-slate-100/80',
         destructive: 'bg-red-600 text-white hover:bg-red-600/90',
-        outline: 'border border-slate-200 bg-white hover:bg-slate-100 hover:text-slate-800',
+        outline: 'border bg-slate-50 border-black/20 hover:bg-slate-100 hover:text-slate-800',
       },
       size: {
         icon: 'size-9',
