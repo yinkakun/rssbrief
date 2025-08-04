@@ -11,6 +11,8 @@ import { toZonedTime, fromZonedTime } from 'date-fns-tz';
 import pLimit from 'p-limit';
 import { components } from './_generated/api';
 import { Resend } from '@convex-dev/resend';
+import { mutation } from './_generated/server';
+import type { Id } from './_generated/dataModel';
 
 const resend: Resend = new Resend(components.resend, {});
 
@@ -466,5 +468,84 @@ export const getUserBriefs = query({
       createdAt: new Date(brief.createdAt).toISOString(),
       topic: brief.topicId ? { id: brief.topicId, name: brief.topicName } : null,
     }));
+  },
+});
+
+export const updateFeedsAndGenerateBriefs = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    console.log('Starting scheduled feed updates and brief generation...');
+
+    const onboardedUsers = await ctx.runQuery(internal.briefs.getOnboardedUsers, {});
+
+    if (onboardedUsers.length === 0) {
+      console.log('No onboarded users found');
+      return;
+    }
+
+    console.log(`Processing ${onboardedUsers.length} onboarded users`);
+
+    const concurrencyLimit = pLimit(5);
+    const userPromises = onboardedUsers.map((userId: Id<'users'>) =>
+      concurrencyLimit(async () => {
+        try {
+          await ctx.runAction(internal.feeds.updateUserFeeds, { userId });
+
+          const processedBriefs = await ctx.runAction(internal.briefs.updateUserBriefs, { userId });
+          console.log(`User ${userId}: Updated feeds and generated ${processedBriefs.length} briefs`);
+          return { userId, success: true, briefsCount: processedBriefs.length };
+        } catch (error) {
+          console.error(`Failed to process user ${userId}:`, error);
+          return { userId, success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+        }
+      }),
+    );
+
+    const results = await Promise.all(userPromises);
+    const successfulUsers = results.filter((r) => r.success).length;
+    const totalBriefs = results.reduce((sum: number, r) => sum + (r.briefsCount || 0), 0);
+
+    console.log(
+      `Feed update and brief generation completed: ${successfulUsers}/${onboardedUsers.length} users processed, ${totalBriefs} total briefs generated`,
+    );
+  },
+});
+
+export const getOnboardedUsers = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const preferences = await ctx.db
+      .query('preferences')
+      .filter((q) => q.eq(q.field('onboarded'), true))
+      .collect();
+
+    return preferences.map((pref) => pref.userId);
+  },
+});
+
+export const triggerFeedUpdateAndBriefGeneration = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const userId = requireAuth(await getAuthUserId(ctx));
+
+    console.log(`Manual trigger: Processing feeds and briefs for user ${userId}`);
+    await ctx.scheduler.runAfter(0, internal.briefs.processUserFeedsAndBriefs, {
+      userId,
+    });
+
+    return { success: true, message: 'Feed update and brief generation scheduled' };
+  },
+});
+
+export const processUserFeedsAndBriefs = internalAction({
+  args: { userId: v.id('users') },
+  handler: async (ctx, { userId }): Promise<{ success: boolean; briefsCount?: number; error?: string }> => {
+    await ctx.runAction(internal.feeds.updateUserFeeds, { userId });
+    console.log(`Feed update completed for user ${userId}`);
+
+    const processedBriefs = await ctx.runAction(internal.briefs.updateUserBriefs, { userId });
+    console.log(`Brief generation completed for user ${userId}: ${processedBriefs.length} briefs generated`);
+
+    return { success: true, briefsCount: processedBriefs.length };
   },
 });

@@ -208,11 +208,14 @@ export const processPostOnboardingTasks = internalAction({
       return;
     }
 
-    await ctx.runAction(internal.feeds.updateUserFeeds, { userId });
-    console.log(`Feed update completed for user: ${userId}`);
+    const result = await ctx.runAction(internal.briefs.processUserFeedsAndBriefs, { userId });
 
-    const processedBriefs = await ctx.runAction(internal.briefs.updateUserBriefs, { userId });
-    console.log(`Briefs update completed for user: ${userId}, processed ${processedBriefs.length} briefs`);
+    if (!result.success) {
+      console.error(`Failed to process feeds and briefs for user ${userId}:`, result.error);
+      return;
+    }
+
+    console.log(`Feed and brief processing completed for user: ${userId}, generated ${result.briefsCount} briefs`);
 
     // TODO - Send welcome email with brief content
     const emailId = await resend.sendEmail(ctx, {
