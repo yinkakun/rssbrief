@@ -32,3 +32,5 @@ app.config.timestamp_*.js
 
 .wrangler
 .dev.vars*
+# Local Netlify folder
+.netlify
