@@ -30,3 +30,5 @@ yarn.lock
 
 app.config.timestamp_*.js
 
+.wrangler
+.dev.vars*
