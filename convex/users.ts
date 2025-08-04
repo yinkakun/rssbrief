@@ -171,10 +171,21 @@ export const onboardUser = mutation({
   },
 });
 
-export const getWelcomeEmailData = internalQuery({
+interface UserOnboardingData {
+  userPreferences: Doc<'preferences'> | null;
+  welcomeData: {
+    email: string | null;
+    topicNames: string[];
+  };
+}
+
+export const getOnboardingData = internalQuery({
   args: { userId: v.id('users') },
-  handler: async (ctx, { userId }) => {
-    const user = await ctx.db.get(userId);
+  handler: async (ctx, { userId }): Promise<UserOnboardingData> => {
+    const userPreferences = await getUserPreferences(ctx, userId);
+
+    const user = await ctx.runQuery(internal.briefs.getUserData, { userId });
+
     const userTopicFeeds = await ctx.db
       .query('topicFeeds')
       .withIndex('by_user', (q) => q.eq('userId', userId))
@@ -189,8 +200,11 @@ export const getWelcomeEmailData = internalQuery({
     }
 
     return {
-      email: user?.email,
-      topicNames,
+      userPreferences,
+      welcomeData: {
+        email: user?.email ?? null,
+        topicNames,
+      },
     };
   },
 });
@@ -200,10 +214,9 @@ export const processPostOnboardingTasks = internalAction({
   handler: async (ctx, { userId }) => {
     console.log(`Processing post-onboarding tasks for user: ${userId}`);
 
-    const userPreferences = await ctx.runQuery(internal.briefs.getUserPreferenceQuery, { userId });
-    const welcomeData = await ctx.runQuery(internal.users.getWelcomeEmailData, { userId });
+    const onboardingData = await ctx.runQuery(internal.users.getOnboardingData, { userId });
 
-    if (!welcomeData.email || !userPreferences) {
+    if (!onboardingData.welcomeData.email || !onboardingData.userPreferences) {
       console.error(`User ${userId} missing email or preferences`);
       return;
     }
@@ -216,10 +229,10 @@ export const processPostOnboardingTasks = internalAction({
     }
 
     const emailId = await resend.sendEmail(ctx, {
-      to: welcomeData.email,
+      to: onboardingData.welcomeData.email,
       text: createDigestEmail(result.briefs),
       from: `RSSBrief <onboarding@resend.dev>`,
-      subject: `🎉 Welcome to RSSBrief, ${userPreferences.name}! Here is your first brief!`,
+      subject: `🎉 Welcome to RSSBrief, ${onboardingData.userPreferences.name}! Here is your first brief!`,
     });
 
     if (emailId) {
