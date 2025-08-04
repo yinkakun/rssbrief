@@ -233,7 +233,7 @@ export const processPostOnboardingTasks = internalAction({
     const emailId = await resend.sendEmail(ctx, {
       to: onboardingData.welcomeData.email,
       text: createDigestEmail(result.briefs),
-      from: `RSSBrief <onboarding@resend.dev>`,
+      from: `RSSBrief <mail@fiendandfriends.xyz>`,
       subject: `🎉 Welcome to RSSBrief, ${onboardingData.userPreferences.name}! Here is your first brief!`,
     });
 

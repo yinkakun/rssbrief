@@ -415,7 +415,7 @@ export const generateWeeklyDigest = internalAction({
 
     const emailId = await resend.sendEmail(ctx, {
       to: user.email,
-      from: `RSSBrief <onboarding@resend.dev>`,
+      from: `RSSBrief <mail@fiendandfriends.xyz>`,
       subject: `Your Weekly RSSBrief Digest (${weekStart} - ${weekEnd})`,
       text: createWeeklyDigestEmailText(digest),
     });

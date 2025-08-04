@@ -12,7 +12,7 @@ export const OTP = Email({
     const { error } = await resend.emails.send({
       to: [email],
       text: 'Your verification code is ' + token,
-      from: 'RSSBrief <onboarding@resend.dev>',
+      from: 'RSSBrief <mail@fiendandfriends.xyz>',
       subject: `Your verification code`,
     });
 
