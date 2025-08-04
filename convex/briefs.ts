@@ -15,7 +15,9 @@ import { mutation } from './_generated/server';
 import type { Id } from './_generated/dataModel';
 import type { ProcessedFeedItem } from './utils';
 
-const resend: Resend = new Resend(components.resend, {});
+const resend: Resend = new Resend(components.resend, {
+  testMode: false,
+});
 
 import {
   TIME_CONSTANTS,
