@@ -333,7 +333,7 @@ function BriefContent({ brief }: BriefContentProps) {
     <div className="flex h-full w-full max-w-prose flex-col gap-5">
       <h1 className="text-3xl font-medium tracking-tight text-slate-900 capitalize">{brief.title}</h1>
       <BriefMetadata createdAt={brief.createdAt} topicName={brief.topic?.name || 'No Topic'} url={brief.url} />
-      <div className="mt-4 font-serif text-lg text-slate-900">
+      <div className="mt-4 font-serif text-lg text-slate-700">
         <ReactMarkdown>{brief.summary}</ReactMarkdown>
       </div>
     </div>
@@ -343,7 +343,7 @@ function BriefContent({ brief }: BriefContentProps) {
 function BriefMetadata({ createdAt, topicName, url }: { createdAt: string; topicName: string; url: string }) {
   return (
     <div className="flex items-center gap-4">
-      <span className="text-sm text-black/80">
+      <span className="text-base text-black/70">
         {format(new Date(createdAt), 'MMMM dd, yyyy')} - {topicName}
       </span>
       <a
@@ -352,7 +352,7 @@ function BriefMetadata({ createdAt, topicName, url }: { createdAt: string; topic
         rel="noopener noreferrer"
         className="flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline"
       >
-        <span className="text-sm">Open original Source</span>
+        <span>Open original Source</span>
       </a>
     </div>
   );
