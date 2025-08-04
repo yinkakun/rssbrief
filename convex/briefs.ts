@@ -13,6 +13,7 @@ import { components } from './_generated/api';
 import { Resend } from '@convex-dev/resend';
 import { mutation } from './_generated/server';
 import type { Id } from './_generated/dataModel';
+import type { ProcessedFeedItem } from './utils';
 
 const resend: Resend = new Resend(components.resend, {});
 
@@ -77,12 +78,6 @@ export const getNextBriefSchedule = query({
   },
 });
 
-interface ProcessedFeedItem {
-  url: string;
-  title: string;
-  summary: string;
-}
-
 const processFeedItem = async (
   url: string,
   style: 'concise' | 'detailed',
@@ -102,6 +97,56 @@ const processFeedItem = async (
     summary: summaryResult.value,
     title: extractedContent.title,
   });
+};
+
+const createWeeklyDigestEmailText = (digest: WeeklyDigest): string => {
+  const { totalBriefs, topicSummaries, weekPeriod } = digest;
+
+  let emailText = `Your Weekly RSSBrief Digest\n`;
+  emailText += `Week of ${weekPeriod.start} to ${weekPeriod.end}\n\n`;
+
+  if (totalBriefs === 0) {
+    emailText += `No new briefs this week.\n\n`;
+  } else {
+    emailText += `This Week's Summary:\n`;
+    emailText += `- Topics: ${topicSummaries.length}\n\n`;
+
+    emailText += `Topics Overview:\n`;
+    topicSummaries
+      .sort((a, b) => b.count - a.count)
+      .forEach((topic) => {
+        emailText += `- ${topic.topicName}: ${topic.count} article${topic.count !== 1 ? 's' : ''}\n`;
+      });
+
+    emailText += `\n`;
+
+    topicSummaries
+      .sort((a, b) => b.count - a.count)
+      .forEach((topic, index) => {
+        emailText += `${topic.topicName.toUpperCase()}\n`;
+        emailText += `${'='.repeat(topic.topicName.length)}\n\n`;
+
+        const itemsToShow = topic.topItems.slice(0, 3);
+
+        itemsToShow.forEach((item, index) => {
+          emailText += `${index + 1}. ${item.title}\n`;
+          emailText += `   ${item.summary}\n`;
+          emailText += `   Link: ${item.url}\n\n`;
+        });
+
+        if (index < topicSummaries.length - 1) {
+          emailText += `${'-'.repeat(50)}\n\n`;
+        }
+      });
+  }
+
+  emailText += `\n${'='.repeat(50)}\n\n`;
+  emailText += `You're receiving this digest because you have email notifications enabled.\n`;
+  emailText += `To modify your preferences or unsubscribe, visit your RSSBrief settings.\n\n`;
+  emailText += `Happy reading!\n`;
+  emailText += `The RSSBrief Team`;
+
+  return emailText;
 };
 
 export const getUserFeedItems = internalQuery({
@@ -299,7 +344,7 @@ interface WeeklyDigest {
   topicSummaries: Array<{
     topicName: string;
     count: number;
-    topArticles: Array<{
+    topItems: Array<{
       title: string;
       url: string;
       summary: string;
@@ -341,13 +386,11 @@ export const generateWeeklyDigest = internalAction({
       topicGroups.get(topicName)!.push(brief);
     });
 
-    const maxArticles = userPreferences.brief.style === 'detailed' ? 5 : 1;
     const topicSummaries = Array.from(topicGroups.entries()).map(([topicName, briefs]) => ({
       topicName,
       count: briefs.length,
-      topArticles: briefs
+      topItems: briefs
         .sort((a, b) => b.createdAt - a.createdAt)
-        .slice(0, maxArticles)
         .map((brief) => ({
           url: brief.url,
           title: brief.title,
@@ -368,12 +411,11 @@ export const generateWeeklyDigest = internalAction({
       },
     };
 
-    // TODO: Format the digest content as needed
     const emailId = await resend.sendEmail(ctx, {
       to: user.email,
       from: `RSSBrief <onboarding@resend.dev>`,
       subject: `Your Weekly RSSBrief Digest (${weekStart} - ${weekEnd})`,
-      text: 'Digest content here',
+      text: createWeeklyDigestEmailText(digest),
     });
 
     if (!emailId) {
@@ -539,13 +581,13 @@ export const triggerFeedUpdateAndBriefGeneration = mutation({
 
 export const processUserFeedsAndBriefs = internalAction({
   args: { userId: v.id('users') },
-  handler: async (ctx, { userId }): Promise<{ success: boolean; briefsCount?: number; error?: string }> => {
+  handler: async (ctx, { userId }): Promise<{ success: boolean; briefs: ProcessedFeedItem[] }> => {
     await ctx.runAction(internal.feeds.updateUserFeeds, { userId });
     console.log(`Feed update completed for user ${userId}`);
 
     const processedBriefs = await ctx.runAction(internal.briefs.updateUserBriefs, { userId });
     console.log(`Brief generation completed for user ${userId}: ${processedBriefs.length} briefs generated`);
 
-    return { success: true, briefsCount: processedBriefs.length };
+    return { success: true, briefs: processedBriefs };
   },
 });

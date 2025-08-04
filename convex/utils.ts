@@ -147,3 +147,13 @@ export function createPrompt(text: string, type: PromptType): string {
       throw new Error(`Invalid prompt type: ${type}. Must be 'concise' or 'detailed'.`);
   }
 }
+
+export interface ProcessedFeedItem {
+  url: string;
+  title: string;
+  summary: string;
+}
+
+export function createDigestEmail(items: ProcessedFeedItem[]): string {
+  return items.map((item) => `${item.title}\n${item.summary}\n${item.url}\n${'—'.repeat(50)}`).join('\n\n');
+}

@@ -1,7 +1,7 @@
 import { v } from 'convex/values';
 import { query, mutation, internalAction } from './_generated/server';
 import { getAuthUserId } from '@convex-dev/auth/server';
-import { requireAuth } from './utils';
+import { requireAuth, createDigestEmail } from './utils';
 import { ConvexError } from 'convex/values';
 import { api } from './_generated/api';
 import { internal } from './_generated/api';
@@ -211,18 +211,15 @@ export const processPostOnboardingTasks = internalAction({
     const result = await ctx.runAction(internal.briefs.processUserFeedsAndBriefs, { userId });
 
     if (!result.success) {
-      console.error(`Failed to process feeds and briefs for user ${userId}:`, result.error);
+      console.error(`Failed to process feeds and briefs for user ${userId}:`);
       return;
     }
 
-    console.log(`Feed and brief processing completed for user: ${userId}, generated ${result.briefsCount} briefs`);
-
-    // TODO - Send welcome email with brief content
     const emailId = await resend.sendEmail(ctx, {
       to: welcomeData.email,
+      text: createDigestEmail(result.briefs),
       from: `RSSBrief <onboarding@resend.dev>`,
       subject: `🎉 Welcome to RSSBrief, ${userPreferences.name}! Here is your first brief!`,
-      text: '',
     });
 
     if (emailId) {
