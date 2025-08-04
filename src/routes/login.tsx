@@ -19,7 +19,6 @@ import { Spinner } from '@/ui/spinner';
 import { Stepper, useStepper } from '@/ui/stepper';
 import { OtpInput, OtpInputSlot, OtpInputGroup } from '@/ui/otp-input';
 
-
 const otpSchema = z.object({
   code: z.string().min(1, 'Please enter the verification code'),
 });
@@ -210,8 +209,8 @@ interface LoginStepWrapperProps {
 
 const LoginStepWrapper = ({ children }: LoginStepWrapperProps) => {
   return (
-    <div className="flex max-w-sm min-w-sm flex-col items-center gap-4 rounded-3xl border border-black/5 bg-white px-8 py-4 text-center">
-      <p className="max-w-[70%] text-center text-xl text-slate-950">Login to RSSBrief</p>
+    <div className="flex max-w-sm min-w-sm flex-col items-center gap-6 rounded-3xl border border-black/5 bg-white px-8 py-8 text-center">
+      <p className="max-w-[70%] text-center text-2xl text-slate-950">Login to RSSBrief</p>
       {children}
 
       <span className="max-w-[90%] text-xs text-slate-600">
