@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { convexQuery } from '@convex-dev/react-query';
 import { z } from 'zod';
 import { formatRelative, format } from 'date-fns';
-
+import ReactMarkdown from 'react-markdown';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/ui/scroll-area';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuCheckboxItem } from '@/ui/dropdown-menu';
@@ -12,19 +12,22 @@ import { Button } from '@/ui/button';
 import { PiEmpty } from 'react-icons/pi';
 
 import { api } from 'convex/_generated/api';
-import type { Doc, Id } from 'convex/_generated/dataModel';
+import type { Id } from 'convex/_generated/dataModel';
 
 const briefsSearchSchema = z.object({
   topics: z.array(z.string()).optional().catch([]),
   sort: z.enum(['newest', 'oldest']).optional().catch('newest'),
 });
 
-type BriefItem = Pick<Doc<'briefItems'>, 'title' | 'summary' | 'url'> & {
+type BriefItem = {
+  title: string;
+  summary: string;
+  url: string;
   createdAt: string;
-  id: Id<'briefItems'>;
+  id: string;
   topic: {
     name: string;
-    id: Id<'topics'>;
+    id: string;
   } | null;
 };
 
@@ -330,21 +333,15 @@ function BriefContent({ brief }: BriefContentProps) {
     );
   }
 
-  return <ActiveBrief brief={brief} />;
-}
-
-function ActiveBrief({ brief }: ActiveBriefProps) {
   return (
     <div className="flex h-full w-full max-w-prose flex-col gap-5">
-      <BriefTitle title={brief.title} />
+      <h1 className="text-3xl font-medium tracking-tight text-slate-900 capitalize">{brief.title}</h1>
       <BriefMetadata createdAt={brief.createdAt} topicName={brief.topic?.name || 'No Topic'} url={brief.url} />
-      <BriefSummary summary={brief.summary} />
+      <div className="mt-4 font-serif text-lg text-slate-900">
+        <ReactMarkdown>{brief.summary}</ReactMarkdown>
+      </div>
     </div>
   );
-}
-
-function BriefTitle({ title }: { title: string }) {
-  return <h1 className="text-2xl font-medium tracking-tight text-slate-900 capitalize">{title}</h1>;
 }
 
 function BriefMetadata({ createdAt, topicName, url }: { createdAt: string; topicName: string; url: string }) {
@@ -361,14 +358,6 @@ function BriefMetadata({ createdAt, topicName, url }: { createdAt: string; topic
       >
         <span className="text-sm">Open original Source</span>
       </a>
-    </div>
-  );
-}
-
-function BriefSummary({ summary }: { summary: string }) {
-  return (
-    <div className="text-sm text-slate-700">
-      <p className="font-serif text-lg leading-relaxed text-black/80">{summary}</p>
     </div>
   );
 }
