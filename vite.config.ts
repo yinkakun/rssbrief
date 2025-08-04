@@ -1,8 +1,8 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import netlify from '@netlify/vite-plugin';
 import tailwindcss from '@tailwindcss/vite';
 import tsConfigPaths from 'vite-tsconfig-paths';
-import { cloudflare } from '@cloudflare/vite-plugin';
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
 
 export default defineConfig({
@@ -20,6 +20,6 @@ export default defineConfig({
       generatedRouteTree: './src/routetree.gen.ts',
     }),
     react(),
-    cloudflare(),
+    netlify(),
   ],
 });
