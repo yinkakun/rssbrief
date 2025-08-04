@@ -2,9 +2,6 @@ import ky from 'ky';
 import { generateText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { ok, fromPromise, fromThrowable } from 'neverthrow';
-import { format } from 'date-fns';
-import { toZonedTime } from 'date-fns-tz';
-import { Resend as ResendClient } from 'resend';
 import { Id } from './_generated/dataModel';
 
 export interface ProcessingError {

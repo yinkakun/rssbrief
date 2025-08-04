@@ -1,12 +1,8 @@
 import { v } from 'convex/values';
-import { fromPromise } from 'neverthrow';
-import { getAuthUserId } from '@convex-dev/auth/server';
-
 import { internal } from './_generated/api';
 import { safeParseRSS } from './rss_parser';
-import { Doc, Id } from './_generated/dataModel';
-import { TIME_CONSTANTS, requireAuth } from './utils';
-import { query, internalQuery, internalMutation, internalAction } from './_generated/server';
+import { TIME_CONSTANTS } from './utils';
+import { internalQuery, internalMutation, internalAction } from './_generated/server';
 
 export const getUserTopicFeeds = internalQuery({
   args: { userId: v.id('users') },

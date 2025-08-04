@@ -1,11 +1,9 @@
 import { ConvexError, v } from 'convex/values';
 import { getAuthUserId } from '@convex-dev/auth/server';
-
 import { requireAuth } from './utils';
 import { internal } from './_generated/api';
 import { Id } from './_generated/dataModel';
 import { internalQuery, internalMutation, MutationCtx, query, mutation } from './_generated/server';
-import { updateFeedTimestamp } from './feeds';
 
 export const getCuratedTopicByName = internalQuery({
   args: { name: v.string() },
