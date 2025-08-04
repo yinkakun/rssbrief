@@ -1,12 +1,14 @@
-import { createRouter as createTanStackRouter } from '@tanstack/react-router';
+import { StrictMode } from 'react';
+import ReactDOM from 'react-dom/client';
+import { createRouter as createTanStackRouter, RouterProvider } from '@tanstack/react-router';
 import { QueryClient } from '@tanstack/react-query';
 import { routerWithQueryClient } from '@tanstack/react-router-with-query';
 import { ConvexQueryClient } from '@convex-dev/react-query';
 import { routeTree } from './routetree.gen';
 import { ConvexAuthProvider } from '@convex-dev/auth/react';
+const CONVEX_URL = import.meta.env.VITE_CONVEX_URL;
 
 export function createRouter() {
-  const CONVEX_URL = import.meta.env.VITE_CONVEX_URL;
   const convexQueryClient = new ConvexQueryClient(CONVEX_URL);
 
   const queryClient: QueryClient = new QueryClient({
@@ -28,7 +30,6 @@ export function createRouter() {
       context: { queryClient },
       scrollRestoration: true,
       defaultPreloadStaleTime: 0,
-      defaultErrorComponent: (err) => <p>{err.error.stack}</p>,
       Wrap: ({ children }) => (
         <ConvexAuthProvider client={convexQueryClient.convexClient}>{children}</ConvexAuthProvider>
       ),
@@ -37,6 +38,18 @@ export function createRouter() {
   );
 
   return router;
+}
+
+const router = createRouter();
+
+const rootElement = document.getElementById('app')!;
+if (!rootElement.innerHTML) {
+  const root = ReactDOM.createRoot(rootElement);
+  root.render(
+    <StrictMode>
+      <RouterProvider router={router} />
+    </StrictMode>,
+  );
 }
 
 declare module '@tanstack/react-router' {

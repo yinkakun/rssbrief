@@ -1,7 +1,8 @@
-import { tanstackStart } from '@tanstack/react-start/plugin/vite';
 import { defineConfig } from 'vite';
-import tsConfigPaths from 'vite-tsconfig-paths';
+import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import tsConfigPaths from 'vite-tsconfig-paths';
+import { tanstackRouter } from '@tanstack/router-plugin/vite';
 
 export default defineConfig({
   server: {
@@ -12,11 +13,10 @@ export default defineConfig({
     tsConfigPaths({
       projects: ['./tsconfig.json'],
     }),
-    tanstackStart({
-      target: 'cloudflare-module',
-      tsr: {
-        generatedRouteTree: 'src/routetree.gen.ts',
-      },
+    tanstackRouter({
+      target: 'react',
+      autoCodeSplitting: true,
     }),
+    react(),
   ],
 });

@@ -1,20 +1,18 @@
-import '@/styles.css';
 import '@fontsource/inter/400.css';
 import '@fontsource/inter/500.css';
+import '@/styles.css';
 
 import * as React from 'react';
 import { Toaster } from '@/ui/toaster';
 import { QueryClient } from '@tanstack/react-query';
-import { Outlet, Scripts, HeadContent, createRootRouteWithContext } from '@tanstack/react-router';
+import { Outlet, Scripts, createRootRouteWithContext } from '@tanstack/react-router';
 
 interface RouterContext {
   queryClient: QueryClient;
 }
 
 export const Route = createRootRouteWithContext<RouterContext>()({
-  head: () => HEAD,
   component: RootComponent,
-  notFoundComponent: NotFoundComponent,
 });
 
 function RootComponent() {
@@ -25,41 +23,12 @@ function RootComponent() {
   );
 }
 
-function NotFoundComponent() {
-  return (
-    <div>
-      <h1>Page Not Found</h1>
-      <p>The page you are looking for does not exist.</p>
-    </div>
-  );
-}
-
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
-    <html>
-      <head>
-        <HeadContent />
-      </head>
-      <body>
-        {children}
-        <Toaster />
-        <Scripts />
-      </body>
-    </html>
+    <React.Fragment>
+      {children}
+      <Toaster />
+      <Scripts />
+    </React.Fragment>
   );
 }
-
-const HEAD = {
-  meta: [
-    {
-      charSet: 'utf-8',
-    },
-    {
-      name: 'viewport',
-      content: 'width=device-width, initial-scale=1',
-    },
-    {
-      title: 'RSSBrief',
-    },
-  ],
-};
