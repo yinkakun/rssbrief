@@ -17,6 +17,7 @@ export default defineConfig({
     tanstackRouter({
       target: 'react',
       autoCodeSplitting: true,
+      generatedRouteTree: './src/routetree.gen.ts',
     }),
     react(),
     cloudflare(),
