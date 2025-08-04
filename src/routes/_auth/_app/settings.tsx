@@ -139,7 +139,6 @@ function AccountSettings({ userPreferences }: AccountSettingsProps) {
   });
 
   const handleSubmit = (data: AccountFormValues) => {
-    console.log('Submitting account settings:', data);
     accountMutation.mutate({
       name: data.name,
     });

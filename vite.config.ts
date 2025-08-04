@@ -13,6 +13,7 @@ export default defineConfig({
       projects: ['./tsconfig.json'],
     }),
     tanstackStart({
+      target: 'cloudflare-module',
       tsr: {
         generatedRouteTree: 'src/routetree.gen.ts',
       },

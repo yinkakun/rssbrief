@@ -91,10 +91,6 @@ interface BriefContentProps {
   brief: BriefItem | null;
 }
 
-interface ActiveBriefProps {
-  brief: BriefItem;
-}
-
 interface EmptyBriefStateProps {
   message: string;
 }

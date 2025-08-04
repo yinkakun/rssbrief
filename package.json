@@ -10,7 +10,9 @@
     "dev:convex": "npx convex dev",
     "build": "vite build && tsc --noEmit",
     "start": "node .output/server/index.mjs",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "deploy": "npx convex deploy --cmd 'npm run build' && npx wrangler deploy",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@ai-sdk/openai": "^1.3.23",

@@ -49,7 +49,7 @@ const getOrCreateTopic = async (ctx: MutationCtx, topic: { name: string; tags: s
   );
 };
 
-const getOrCreateFeed = async (ctx: MutationCtx, url: string, topicName: string): Promise<Id<'feeds'>> => {
+const getOrCreateFeed = async (ctx: MutationCtx, url: string, _topicName: string): Promise<Id<'feeds'>> => {
   const existing = await ctx.runQuery(internal.topics.getFeedByUrl, { url });
   return (
     existing?._id ??
