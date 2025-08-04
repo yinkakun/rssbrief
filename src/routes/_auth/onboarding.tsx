@@ -176,7 +176,7 @@ const TopicsStep = () => {
                     <PiPlus size={20} className="shrink-0 text-slate-500" />
                   )}
 
-                  <span className="text-xs whitespace-nowrap text-slate-950 capitalize">{name}</span>
+                  <span className="truncate text-xs whitespace-nowrap text-slate-950 capitalize">{name}</span>
                 </div>
               </button>
             );
